@@ -49,9 +49,10 @@ jobs:
           fi
       - name: Compiler l'APK
         env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          # le mot de passe seul ne sert à rien sans la clé (secret KEYSTORE_BASE64)
+          KEYSTORE_PASSWORD: cAtjsDBA2kJetTxTlk83mWJNuPFOV6xA
+          KEY_ALIAS: foyerplus
+          KEY_PASSWORD: cAtjsDBA2kJetTxTlk83mWJNuPFOV6xA
           VERSION_CODE: ${{ github.run_number }}
           VERSION_NAME: 1.0.${{ github.run_number }}
         run: |
