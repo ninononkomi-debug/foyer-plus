@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Foyer+</string>
+    <string name="title_activity_main">Foyer+</string>
+    <string name="package_name">com.mackita.foyerplus</string>
+    <string name="custom_url_scheme">com.mackita.foyerplus</string>
+</resources>
