@@ -15,8 +15,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  VITE_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-  VITE_SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
   VITE_WEB_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
   VITE_GH_REPO: ${{ github.repository }}
   VITE_APP_VERSION: 1.0.${{ github.run_number }}
