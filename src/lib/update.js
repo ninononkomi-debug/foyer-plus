@@ -14,7 +14,10 @@ export async function checkUpdate(force = false) {
   if (!GH_REPO || !isNative) return null;
   try {
     const last = Number(localStorage.getItem('fp:updcheck') || 0);
-    if (!force && Date.now() - last < 6 * 3600e3) return localStorage.getItem('fp:updver') || null;
+    if (!force && Date.now() - last < 6 * 3600e3) {
+      const cached = localStorage.getItem('fp:updver') || '';
+      return cached && cmp(cached, APP_VERSION) > 0 ? cached : null;
+    }
     const r = await fetch(`https://api.github.com/repos/${GH_REPO}/releases/latest`, { headers: { Accept: 'application/vnd.github+json' } });
     if (!r.ok) return null;
     const j = await r.json();
