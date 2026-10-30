@@ -1,10 +1,10 @@
 {
-  "name": "Foyer+",
-  "short_name": "Foyer+",
+  "name": "Orly",
+  "short_name": "Orly",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#7C3AED",
-  "theme_color": "#7C3AED",
+  "background_color": "#D3145A",
+  "theme_color": "#D3145A",
   "lang": "fr",
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },

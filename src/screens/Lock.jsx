@@ -43,7 +43,7 @@ export function LockScreen({ user, onUnlock, onLogout }) {
   }, []);
   return (
     <div className="lock">
-      <div className="brand"><span className="logo">F<b>+</b></span></div>
+      <div className="brand"><span className="logo brand-o">O</span></div>
       <PinPad title="Entrez votre code" sub={user.user_metadata?.display_name ? `Bonjour ${user.user_metadata.display_name}` : null} error={err}
         extra={bio ? <button className="bio" onClick={tryBio} aria-label="Empreinte"><Fingerprint size={28} /></button> : null}
         onDone={async (pin) => {
@@ -68,7 +68,7 @@ export function PinSetup({ user, onDone }) {
       <div className="lock">
         <div className="brand"><Fingerprint size={64} /></div>
         <h2>Utiliser votre empreinte ?</h2>
-        <p className="muted center">Déverrouillez Foyer+ d'un simple toucher. Le code PIN reste disponible.</p>
+        <p className="muted center">Déverrouillez Orly d'un simple toucher. Le code PIN reste disponible.</p>
         <button className="btn primary full" onClick={async () => { if (await biometryAuth()) setPrefs(user.id, { bio: true }); onDone(); }}>Activer l'empreinte</button>
         <button className="btn ghost full" onClick={onDone}>Plus tard</button>
       </div>
@@ -76,7 +76,7 @@ export function PinSetup({ user, onDone }) {
   }
   return (
     <div className="lock">
-      <div className="brand"><span className="logo">F<b>+</b></span></div>
+      <div className="brand"><span className="logo brand-o">O</span></div>
       <PinPad title={first ? 'Confirmez votre code' : 'Créez votre code secret'} sub="4 chiffres, demandés à chaque ouverture" error={err}
         onDone={async (pin) => {
           if (!first) { setFirst(pin); setErr(null); return; }

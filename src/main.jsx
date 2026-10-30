@@ -4,6 +4,7 @@ import '@fontsource/plus-jakarta-sans/400.css';
 import '@fontsource/plus-jakarta-sans/600.css';
 import '@fontsource/plus-jakarta-sans/700.css';
 import '@fontsource/plus-jakarta-sans/800.css';
+import '@fontsource/playfair-display/700-italic.css';
 import './styles.css';
 import App from './App.jsx';
 

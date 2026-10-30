@@ -5,7 +5,7 @@ import { flows, inScope, monthStats } from '../lib/compute.js';
 import { monthKey, dateLong, norm, today, num } from '../lib/format.js';
 import { Money, MonthNav, Segmented, Empty, CatBadge, SharedTag, Sheet, Field, MoneyInput, CategorySelect, WalletSelect, SpaceSelect, PhotoInput, Confirm, useToast, ScreenHead } from '../components/ui.jsx';
 
-export default function Operations({ go, scope, month, setMonth, openForm }) {
+export default function Operations({ go, back, scope, month, setMonth, openForm }) {
   const s = useStore();
   const [q, setQ] = useState('');
   const [type, setType] = useState('tout');
@@ -33,7 +33,7 @@ export default function Operations({ go, scope, month, setMonth, openForm }) {
 
   return (
     <div className="screen">
-      <ScreenHead title="Opérations" />
+      <ScreenHead title="Opérations" onBack={back} />
       <MonthNav value={month} onChange={setMonth} />
       <div className="mini-stats">
         <div><small>Revenus</small><Money v={st.revenus} className="pos" /></div>
@@ -61,6 +61,7 @@ export default function Operations({ go, scope, month, setMonth, openForm }) {
           </div>
         </div>
       ))}
+      <button className="fab" onClick={() => openForm(null)} aria-label="Ajouter une opération">+</button>
     </div>
   );
 }

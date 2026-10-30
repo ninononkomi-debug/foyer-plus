@@ -257,6 +257,7 @@ class Store {
 }
 
 export const store = new Store();
+if (LOCAL_MODE && typeof window !== 'undefined') window.__store = store;
 
 export function useStore() {
   useSyncExternalStore(store.subscribe, store.getVersion);

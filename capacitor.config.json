@@ -1,10 +1,10 @@
 {
   "appId": "com.mackita.foyerplus",
-  "appName": "Foyer+",
+  "appName": "Orly",
   "webDir": "dist",
   "android": { "allowMixedContent": false, "webContentsDebuggingEnabled": false },
   "plugins": {
     "SystemBars": { "insetsHandling": "css", "style": "DEFAULT" },
-    "LocalNotifications": { "smallIcon": "ic_stat_foyer", "iconColor": "#7C3AED" }
+    "LocalNotifications": { "smallIcon": "ic_stat_foyer", "iconColor": "#D3145A" }
   }
 }

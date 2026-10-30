@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { checkUpdate, apkUrl } from '../lib/update.js';
-import { Eye, EyeOff, RefreshCw, CloudOff, AlertTriangle, Info, ChevronRight } from 'lucide-react';
+import { Eye, EyeOff, RefreshCw, CloudOff, AlertTriangle, Info, ChevronRight, ListOrdered, Target, PiggyBank, Users, Building2, Handshake, Wallet, KeyRound, Plus } from 'lucide-react';
 import { useStore } from '../lib/store.js';
 import { monthStats, lastMonths, walletBalances, categoriesMap, catInfo, alerts, budgetStatus, omStats } from '../lib/compute.js';
 import { money, monthKey, today, monthLabel } from '../lib/format.js';
@@ -8,7 +7,7 @@ import { Money, Donut, Bars, Segmented, MonthNav, Progress, CatBadge } from '../
 import { WALLET_TYPES } from '../lib/defaults.js';
 import { LOCAL_MODE } from '../config.js';
 
-export default function Dashboard({ go, scope, setScope, month, setMonth }) {
+export default function Dashboard({ go, scope, setScope, month, setMonth, onAdd }) {
   const s = useStore();
   const [hide, setHide] = useState(() => localStorage.getItem('fp:hide') === '1');
   const toggleHide = () => { localStorage.setItem('fp:hide', hide ? '0' : '1'); setHide(!hide); };
@@ -23,18 +22,19 @@ export default function Dashboard({ go, scope, setScope, month, setMonth }) {
   const totalWallets = wallets.reduce((x, w) => x + (bal[w.id] || 0), 0);
   const al = month === monthKey(today()) ? alerts(s).filter((a) => scope === 'tout' || true) : [];
   const budgets = budgetStatus(s, month, scope).slice(0, 4);
-  const om = omStats(s, month);
   const me = s.profiles[s.user?.id]?.display_name || s.user?.user_metadata?.display_name || '';
   const H = (v) => (hide ? '••••••' : money(v));
-  const [upd, setUpd] = useState(null);
-  useEffect(() => { checkUpdate().then(setUpd); }, []);
+  const mods = [
+    ['ops', ListOrdered, 'Opérations', ''], ['budget', Target, 'Budget', 'amber'], ['epargne', PiggyBank, 'Épargne', 'green'], ['tontines', Users, 'Tontines', 'blue'],
+    ['dettes', Handshake, 'Dettes', 'red'], ['portefeuilles', Wallet, 'Porte-monnaie', 'ink'], ['patrimoine', Building2, 'Patrimoine', 'blue'], ['locataires', KeyRound, 'Locataires', 'amber'],
+  ];
 
   return (
     <div className="screen">
       <header className="home-head">
         <div>
-          <p className="hello">Bonjour{me ? ` ${me}` : ''} 👋</p>
-          <h1>Foyer<span className="plus">+</span></h1>
+          <h1>Foyer</h1>
+          <p className="hello">{s.household ? s.household.name : 'Mes finances'}</p>
         </div>
         <div className="row gap-s">
           <SyncBadge />
@@ -42,18 +42,16 @@ export default function Dashboard({ go, scope, setScope, month, setMonth }) {
         </div>
       </header>
 
-      {upd && (
-        <button className="alert-row info" onClick={() => window.open(apkUrl(), '_blank')}>
-          <Info size={18} /><span className="grow">Nouvelle version {upd} disponible : appuyez pour la télécharger</span>
-        </button>
-      )}
+      <div className="mod-grid">
+        {mods.map(([k, I, l, c]) => <button key={k} className="mod" onClick={() => go(k)}><span className={`ico ${c}`}><I size={19} /></span>{l}</button>)}
+      </div>
       {s.householdId && (
         <Segmented value={scope} onChange={setScope} options={[['tout', 'Tout'], ['perso', '🔒 Perso'], ['foyer', '🏠 Foyer']]} />
       )}
       <MonthNav value={month} onChange={setMonth} />
 
       <section className="hero">
-        <p>Solde de {monthLabel(month).split(' ')[0]}</p>
+        <p>Solde de {monthLabel(month).split(' ')[0]} · Foyer</p>
         <h2>{hide ? '••••••' : <>{st.solde >= 0 ? '+' : ''}{money(st.solde)}</>}</h2>
         <div className="hero-row">
           <div><small>Revenus</small><b>{H(st.revenus)}</b></div>
@@ -123,16 +121,8 @@ export default function Dashboard({ go, scope, setScope, month, setMonth }) {
         <div className="legend-inline"><span><i className="dot rev" />Revenus</span><span><i className="dot dep" />Dépenses</span></div>
       </section>
 
-      {scope !== 'foyer' && om.nb > 0 && (
-        <button className="card card-link" onClick={() => go('orlymarket')}>
-          <div className="grow">
-            <h3 className="card-t">🛍️ OrlyMarket ce mois</h3>
-            <p className="muted">{om.nb} vente{om.nb > 1 ? 's' : ''} · Bénéfice <b className="pos">{H(om.benefice)}</b>{om.impaye > 0 && <> · Impayés <b className="neg">{H(om.impaye)}</b></>}</p>
-          </div>
-          <ChevronRight size={20} />
-        </button>
-      )}
 
+      <button className="fab" onClick={onAdd} aria-label="Ajouter une opération"><Plus size={26} /></button>
       {LOCAL_MODE && <p className="muted center small">Mode test : données enregistrées uniquement sur cet appareil.</p>}
     </div>
   );

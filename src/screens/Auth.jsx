@@ -48,9 +48,9 @@ export function AuthScreen() {
   return (
     <div className="auth">
       <div className="auth-top">
-        <span className="logo big">F<b>+</b></span>
-        <h1>Foyer<span className="plus">+</span></h1>
-        <p>Les finances de la famille, en toute simplicité.</p>
+        <span className="logo big brand-o">O</span>
+        <h1 className="wordmark">Orly</h1>
+        <p>Mon commerce, mon foyer, mes journées. Tout au même endroit.</p>
       </div>
       <form className="auth-card" onSubmit={submit}>
         <h2>{mode === 'login' ? 'Connexion' : mode === 'signup' ? 'Créer mon compte' : 'Mot de passe oublié'}</h2>
@@ -92,7 +92,7 @@ export function NewPasswordScreen({ onDone }) {
   };
   return (
     <div className="auth">
-      <div className="auth-top"><span className="logo big">F<b>+</b></span><h1>Nouveau mot de passe</h1></div>
+      <div className="auth-top"><span className="logo big brand-o">O</span><h1>Nouveau mot de passe</h1></div>
       <form className="auth-card" onSubmit={save}>
         <Field label="Nouveau mot de passe"><input type="password" value={p} onChange={(e) => setP(e.target.value)} autoComplete="new-password" /></Field>
         <Field label="Confirmer"><input type="password" value={p2} onChange={(e) => setP2(e.target.value)} autoComplete="new-password" /></Field>

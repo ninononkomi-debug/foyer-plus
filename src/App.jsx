@@ -1,17 +1,22 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Home, ListOrdered, LayoutGrid, Settings as Cog, Plus } from 'lucide-react';
+import { LayoutDashboard as Home2, ShoppingBag, House, CalendarCheck, ListChecks, Settings as Cog } from 'lucide-react';
 import { App as CapApp } from '@capacitor/app';
 import { supabase } from './lib/supabase.js';
 import { store, useStore } from './lib/store.js';
-import { getPrefs } from './lib/security.js';
-import { refreshNotifications } from './lib/notify.js';
+import { getPrefs, setPrefs } from './lib/security.js';
+import { refreshNotifications, requestNotifPermission, ensureExactAlarms } from './lib/notify.js';
+import { isNative } from './lib/security.js';
 import { LOCAL_MODE } from './config.js';
 import { monthKey, today } from './lib/format.js';
-import { ToastProvider } from './components/ui.jsx';
+import { ToastProvider, ScreenHead } from './components/ui.jsx';
 import Dashboard from './screens/Dashboard.jsx';
 import Operations, { OperationForm } from './screens/Operations.jsx';
-import { ModulesHome, Budget, Epargne, Tontines, Abonnements, Patrimoine, Dettes, Portefeuilles } from './screens/Modules.jsx';
-import { OrlyMarket, Locataires } from './screens/Business.jsx';
+import { Budget, Epargne, Tontines, Patrimoine, Dettes, Portefeuilles } from './screens/Modules.jsx';
+import { Locataires } from './screens/Business.jsx';
+import Home from './screens/Home.jsx';
+import Market from './screens/Market.jsx';
+import Agenda from './screens/Agenda.jsx';
+import Affectation from './screens/Affectation.jsx';
 import Settings, { usePrefs } from './screens/Settings.jsx';
 import { AuthScreen, NewPasswordScreen } from './screens/Auth.jsx';
 import { LockScreen, PinSetup } from './screens/Lock.jsx';
@@ -111,20 +116,38 @@ function ThemeRoot({ userId, children }) {
   return children;
 }
 
-const Splash = () => <div className="lock"><span className="logo big">F<b>+</b></span></div>;
+const Splash = () => <div className="lock"><span className="logo big brand-o">O</span></div>;
+
+function useSections(s) {
+  const prefs = usePrefs(s.user?.id || 'none');
+  const myRole = s.members.find((m) => m.household_id === s.householdId && m.user_id === s.user?.id)?.role;
+  const isGuest = !!s.householdId && myRole && myRole !== 'admin';
+  const def = { market: !isGuest, affectation: !isGuest };
+  const sections = { ...def, ...(prefs.sections || {}) };
+  const setSections = (v) => setPrefs(s.user.id, { sections: v });
+  return [sections, setSections];
+}
 
 function Main({ onLogout }) {
   const s = useStore();
+  const [sections, setSections] = useSections(s);
   const [tab, setTab] = useState('home');
+  const [tabArg, setTabArg] = useState(null);
   const [sub, setSub] = useState(null);
   const [month, setMonth] = useState(monthKey(today()));
   const [scope, setScope] = useState('tout');
   const [form, setForm] = useState(null);
   const scrollRef = useRef();
 
+  const TABS = { home: 1, market: 1, foyer: 1, agenda: 1, affectation: 1, settings: 1 };
   const go = (k) => {
-    const tabs = { home: 1, ops: 1, modules: 1, settings: 1 };
-    if (tabs[k]) { setTab(k); setSub(null); } else setSub(k);
+    const [base, arg] = String(k).split(':');
+    if (TABS[base]) { setTab(base); setTabArg(arg || null); setSub(null); }
+    else {
+      // un module du foyer s'ouvre dans l'onglet Foyer (abonnements → Agenda)
+      if (base === 'abonnements') { setTab('agenda'); setTabArg('abos'); setSub(null); }
+      else { if (!['settings', 'foyer'].includes(tab)) setTab('foyer'); setSub(base); }
+    }
     scrollRef.current?.scrollTo(0, 0);
   };
   const back = () => { setSub(null); scrollRef.current?.scrollTo(0, 0); };
@@ -134,35 +157,48 @@ function Main({ onLogout }) {
     return false;
   };
   useEffect(() => { scrollRef.current?.scrollTo(0, 0); }, [tab]);
+  // première ouverture d'Orly : autoriser notifications + alarmes exactes (tâches à l'heure pile)
+  useEffect(() => {
+    if (!isNative || localStorage.getItem('orly:notifAsked')) return;
+    localStorage.setItem('orly:notifAsked', '1');
+    (async () => { if (await requestNotifPermission()) await ensureExactAlarms(); refreshNotifications(store); })();
+  }, []);
   if (!s.ready) return <Splash />;
 
   const props = { go, back, month, setMonth, scope, setScope };
   const subs = {
-    budget: Budget, epargne: Epargne, tontines: Tontines, abonnements: Abonnements, patrimoine: Patrimoine,
-    dettes: Dettes, portefeuilles: Portefeuilles, orlymarket: OrlyMarket, locataires: Locataires,
+    budget: Budget, epargne: Epargne, tontines: Tontines, patrimoine: Patrimoine,
+    dettes: Dettes, portefeuilles: Portefeuilles, locataires: Locataires,
   };
   let screen;
-  if (sub && subs[sub]) { const C = subs[sub]; screen = <C {...props} />; }
-  else if (tab === 'home') screen = <Dashboard {...props} />;
-  else if (tab === 'ops') screen = <Operations {...props} openForm={(rec) => setForm({ rec })} />;
-  else if (tab === 'modules') screen = <ModulesHome go={go} />;
-  else screen = <Settings go={go} onLogout={onLogout} />;
+  if (sub === 'ops') screen = <Operations {...props} openForm={(rec) => setForm({ rec })} />;
+  else if (sub && subs[sub]) { const C = subs[sub]; screen = <C {...props} />; }
+  else if (tab === 'home') screen = <Home go={go} sections={sections} />;
+  else if (tab === 'market' && sections.market) screen = <Market go={go} month={month} setMonth={setMonth} />;
+  else if (tab === 'foyer') screen = <Dashboard {...props} onAdd={() => setForm({})} />;
+  else if (tab === 'agenda') screen = <Agenda key={tabArg || 'jour'} initial={tabArg} />;
+  else if (tab === 'affectation' && sections.affectation) screen = <Affectation go={go} showMarket={sections.market} />;
+  else if (tab === 'settings') screen = <Settings go={go} onLogout={onLogout} sections={sections} setSections={setSections} />;
+  else screen = <Home go={go} sections={sections} />;
 
-  const T = ({ k, icon, label }) => (
-    <button className={tab === k && !sub ? 'on' : tab === k ? 'half' : ''} onClick={() => go(k)} aria-label={label}>
-      {icon}<span>{label}</span>
+  const T = ({ k, icon: I, label }) => (
+    <button className={`tab ${tab === k ? 'on' : ''}`} onClick={() => go(k)} aria-label={label} aria-current={tab === k ? 'page' : undefined}>
+      <I size={22} /><span>{label}</span>
     </button>
   );
   return (
-    <div className="app">
-      <main className="content" ref={scrollRef}>{screen}</main>
-      <nav className="tabbar">
-        <T k="home" icon={<Home size={22} />} label="Accueil" />
-        <T k="ops" icon={<ListOrdered size={22} />} label="Opérations" />
-        <button className="add" onClick={() => setForm({})} aria-label="Ajouter une opération"><Plus size={28} /></button>
-        <T k="modules" icon={<LayoutGrid size={22} />} label="Modules" />
-        <T k="settings" icon={<Cog size={22} />} label="Réglages" />
+    <div className="shell">
+      <nav className="rail" aria-label="Sections">
+        <span className="rail-brand" aria-hidden="true">O</span>
+        <T k="home" icon={Home2} label="Accueil" />
+        {sections.market && <T k="market" icon={ShoppingBag} label="Market" />}
+        <T k="foyer" icon={House} label="Foyer" />
+        <T k="agenda" icon={CalendarCheck} label="Agenda" />
+        {sections.affectation && <T k="affectation" icon={ListChecks} label="Affecter" />}
+        <span className="spacer" />
+        <T k="settings" icon={Cog} label="Réglages" />
       </nav>
+      <main className="content" ref={scrollRef}>{screen}</main>
       {form && <OperationForm rec={form.rec} onClose={() => setForm(null)} />}
     </div>
   );

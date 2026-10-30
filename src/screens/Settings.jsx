@@ -4,14 +4,16 @@ import { Share } from '@capacitor/share';
 import { useStore } from '../lib/store.js';
 import { supabase, frError } from '../lib/supabase.js';
 import { getPrefs, setPrefs, setPin, biometryAvailable, biometryAuth, isNative } from '../lib/security.js';
-import { refreshNotifications, requestNotifPermission } from '../lib/notify.js';
+import { refreshNotifications, requestNotifPermission, ensureExactAlarms } from '../lib/notify.js';
+import UpdateBanner from '../components/UpdateBanner.jsx';
+import avatar from '../assets/orly-avatar.jpg';
 import { exportExcel, exportPdf } from '../lib/export.js';
 import { LOCAL_MODE, APP_VERSION } from '../config.js';
 import { monthKey, today, monthLabel } from '../lib/format.js';
 import { ScreenHead, Sheet, Field, Segmented, useToast, RecordForm, Confirm, MonthNav } from '../components/ui.jsx';
 import { PinPad } from './Lock.jsx';
 
-export default function Settings({ go, onLogout }) {
+export default function Settings({ go, onLogout, sections, setSections }) {
   const s = useStore();
   const toast = useToast();
   const [sheet, setSheet] = useState(null);
@@ -30,7 +32,7 @@ export default function Settings({ go, onLogout }) {
     <div className="screen">
       <ScreenHead title="Réglages" />
       <div className="profile-card">
-        <div className="avatar">{(me || s.user.email || '?')[0].toUpperCase()}</div>
+        {sections.market ? <img className="photo-av" style={{ width: 52, height: 52, borderRadius: '50%', objectFit: 'cover' }} src={avatar} alt="" /> : <div className="avatar">{(me || s.user.email || '?')[0].toUpperCase()}</div>}
         <div className="grow"><b>{me || 'Mon profil'}</b><small>{LOCAL_MODE ? 'Mode test (sans compte)' : s.user.email}</small></div>
       </div>
 
@@ -54,8 +56,20 @@ export default function Settings({ go, onLogout }) {
         <div className="item">
           <span className="emoji">🌓</span>
           <div className="grow item-main"><b>Thème</b></div>
-          <Segmented value={prefs.theme} onChange={(v) => setPrefs(s.user.id, { theme: v })} options={[['auto', 'Auto'], ['light', 'Clair'], ['dark', 'Sombre']]} />
+          <Segmented value={prefs.theme === 'dark' ? 'dark' : 'light'} onChange={(v) => setPrefs(s.user.id, { theme: v })} options={[['light', 'Clair'], ['dark', 'Sombre']]} />
         </div>
+      </div>
+
+      <h3 className="sec-t">Sections affichées</h3>
+      <div className="card list">
+        <label className="toggle-row item"><span>OrlyMarket<small>Factures, clientes et bénéfice (privé)</small></span><input type="checkbox" className="switch" checked={sections.market} onChange={(e) => setSections({ ...sections, market: e.target.checked })} /></label>
+        <label className="toggle-row item"><span>Affectation<small>Répartir un argent reçu et cocher</small></span><input type="checkbox" className="switch" checked={sections.affectation} onChange={(e) => setSections({ ...sections, affectation: e.target.checked })} /></label>
+      </div>
+
+      <h3 className="sec-t">Mise à jour</h3>
+      <UpdateBanner force />
+      <div className="card list">
+        <Row icon="⬆️" label="Rechercher une mise à jour" value={`Version installée : ${APP_VERSION}`} onClick={() => { localStorage.removeItem('fp:updcheck'); window.location.reload(); }} />
       </div>
 
       <h3 className="sec-t">Données</h3>
@@ -66,7 +80,7 @@ export default function Settings({ go, onLogout }) {
       </div>
 
       {!LOCAL_MODE && <button className="btn ghost danger-t full mt" onClick={() => setSheet('logout')}><LogOut size={18} /> Se déconnecter</button>}
-      <p className="muted center small">Foyer+ version {APP_VERSION}</p>
+      <p className="muted center small">Orly version {APP_VERSION} · données chiffrées en transit et protégées par votre code</p>
 
       {sheet === 'profil' && <ProfilSheet onClose={() => setSheet(null)} />}
       {sheet === 'foyer' && <FoyerSheet onClose={() => setSheet(null)} />}
@@ -123,7 +137,7 @@ function FoyerSheet({ onClose }) {
   };
   const h = s.household;
   const members = s.members.filter((m) => m.household_id === s.householdId);
-  const invite = `Rejoins notre foyer sur Foyer+ 🏠\nCode d'invitation : ${h?.invite_code}\n(Réglages › Mon foyer › Rejoindre un foyer)`;
+  const invite = `Rejoins notre foyer sur l'application Orly 🏠\nCode d'invitation : ${h?.invite_code}\n(Réglages › Mon foyer › Rejoindre un foyer)`;
   return (
     <Sheet title="Mon foyer" onClose={onClose}>
       {!h ? (
@@ -140,7 +154,7 @@ function FoyerSheet({ onClose }) {
         <>
           <div className="hero small"><p>Foyer</p><h2>{h.name}</h2></div>
           <h3 className="sec-t">Inviter mon conjoint</h3>
-          <p className="muted small">Votre conjoint installe Foyer+, crée son compte, puis saisit ce code dans Réglages › Mon foyer.</p>
+          <p className="muted small">Votre conjoint installe l'application Orly, crée son compte, puis saisit ce code dans Réglages › Mon foyer.</p>
           <div className="invite-code">{h.invite_code}</div>
           <div className="row gap">
             <button className="btn soft grow" onClick={() => { navigator.clipboard?.writeText(h.invite_code); toast('Code copié ✓'); }}><Copy size={16} /> Copier</button>
@@ -229,17 +243,19 @@ function NotifSheet({ onClose }) {
   const toast = useToast();
   const setN = (k, v) => { setPrefs(s.user.id, { notif: { ...prefs.notif, [k]: v } }); refreshNotifications(s); };
   const items = [
+    ['taches', 'Tâches de la journée', "À l'heure prévue, et un résumé chaque matin"],
+    ['abonnements', 'Abonnements', '7 jours avant, 2 jours avant et le jour même'],
     ['daily', 'Rappel de saisie quotidien', 'Pour ne rien oublier le soir'],
     ['budget', 'Budget dépassé', 'Quand une catégorie dépasse son plafond'],
     ['loyers', 'Loyers', 'Loyer attendu ou en retard'],
     ['dettes', 'Dettes et créances', "La veille et le jour de l'échéance"],
-    ['abonnements', 'Abonnements', "La veille de l'échéance"],
     ['tontine', 'Tontine', 'La veille de la cotisation et de votre tour'],
   ];
   return (
     <Sheet title="Notifications" onClose={onClose}>
       {!isNative && <div className="alert warn">Les notifications fonctionnent dans l'application Android.</div>}
-      {isNative && <button className="btn soft full" onClick={async () => { const ok = await requestNotifPermission(); toast(ok ? 'Notifications autorisées ✓' : 'Autorisez les notifications dans les réglages du téléphone', ok ? 'ok' : 'err'); refreshNotifications(s); }}>Autoriser les notifications</button>}
+      {isNative && <button className="btn soft full" onClick={async () => { const ok = await requestNotifPermission(); const ex = ok && await ensureExactAlarms(); toast(ok ? (ex ? 'Notifications autorisées ✓' : 'Activez « Alarmes et rappels » pour Orly, puis revenez') : 'Autorisez les notifications dans les réglages du téléphone', ok ? 'ok' : 'err'); refreshNotifications(s); }}>Autoriser les notifications et alarmes</button>}
+      <p className="muted small">Les rappels sont programmés dans le téléphone : ils arrivent même application fermée et sans internet.</p>
       {items.map(([k, l, h]) => (
         <label className="toggle-row" key={k}>
           <span>{l}<small>{h}</small></span>

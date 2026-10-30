@@ -4,8 +4,8 @@ import { BiometricAuth } from '@aparajita/capacitor-biometric-auth';
 export const isNative = Capacitor.isNativePlatform();
 
 const DEFAULT_PREFS = {
-  pinHash: null, pinSalt: null, bio: false, lockDelay: 60, theme: 'auto', failed: 0,
-  notif: { daily: true, budget: true, loyers: true, dettes: true, abonnements: true, tontine: true },
+  pinHash: null, pinSalt: null, bio: false, lockDelay: 60, theme: 'light', failed: 0,
+  notif: { taches: true, daily: true, budget: true, loyers: true, dettes: true, abonnements: true, tontine: true },
   reminderHour: 20, reminderMinute: 0,
   omRepartition: { epargne: 30, reinvest: 40, perso: 20, tontine: 10 },
 };
@@ -59,10 +59,10 @@ export async function biometryAvailable() {
 export async function biometryAuth() {
   try {
     await BiometricAuth.authenticate({
-      reason: 'Déverrouiller Foyer+',
+      reason: 'Déverrouiller Orly',
       cancelTitle: 'Utiliser le code',
       allowDeviceCredential: false,
-      androidTitle: 'Foyer+',
+      androidTitle: 'Orly',
       androidSubtitle: 'Déverrouillez avec votre empreinte',
       androidConfirmationRequired: false,
     });

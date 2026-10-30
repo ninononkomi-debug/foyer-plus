@@ -1,4 +1,4 @@
-name: Construire Foyer+
+name: Construire Orly
 
 on:
   push:
@@ -62,18 +62,22 @@ jobs:
           cd android
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon --stacktrace
-          cp app/build/outputs/apk/release/app-release.apk ../Foyer-plus.apk
+          cp app/build/outputs/apk/release/app-release.apk ../Orly.apk
+          # même fichier sous l'ancien nom : les téléphones encore en Foyer+ se mettent à jour aussi
+          cp ../Orly.apk ../Foyer-plus.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: Foyer-plus-apk
-          path: Foyer-plus.apk
+          name: Orly-apk
+          path: Orly.apk
       - name: Publier la version
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
-          name: Foyer+ 1.0.${{ github.run_number }}
-          body: "Téléchargez **Foyer-plus.apk** ci-dessous et ouvrez-le sur votre téléphone Android."
-          files: Foyer-plus.apk
+          name: Orly 1.0.${{ github.run_number }}
+          body: "Téléchargez **Orly.apk** ci-dessous et ouvrez-le sur votre téléphone Android. (Foyer-plus.apk est le même fichier, pour les anciennes versions.)"
+          files: |
+            Orly.apk
+            Foyer-plus.apk
           make_latest: true
 
   web:

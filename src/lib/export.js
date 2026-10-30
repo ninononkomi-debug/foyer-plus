@@ -72,7 +72,7 @@ export async function exportExcel(store) {
   add('PATRIMOINE', store.list('patrimoine').map((r) => ({ Actif: r.data.actif, 'Valeur actuelle': num(r.data.valeur), 'Date mise à jour': r.data.date || '' })));
   add('DETTES_CREANCES', store.list('dette').map((r) => ({ Personne: r.data.personne, Type: r.data.type === 'creance' ? 'Créance' : 'Dette', Montant: num(r.data.montant), Reste: detteReste(r), Date: r.data.date || '', Échéance: r.data.echeance || '', Motif: r.data.motif || '' })));
   const b64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
-  await deliver(b64, `Foyer+_export_${today()}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  await deliver(b64, `Orly_export_${today()}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 }
 
 export async function exportPdf(store, mk, scope = 'tout') {
@@ -80,14 +80,14 @@ export async function exportPdf(store, mk, scope = 'tout') {
   const autoTable = (await import('jspdf-autotable')).default;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const M = (v) => money(v).replace(/ | /g, ' ');
-  const violet = [124, 58, 237], rose = [236, 72, 153];
+  const violet = [211, 20, 90], rose = [161, 10, 66];
   doc.setFillColor(...violet);
   doc.rect(0, 0, 210, 30, 'F');
   doc.setFillColor(...rose);
   doc.rect(140, 0, 70, 30, 'F');
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(20);
-  doc.text('Foyer+', 14, 14);
+  doc.text('Orly', 14, 14);
   doc.setFontSize(11);
   doc.text(`Relevé de ${monthLabel(mk)}${scope === 'perso' ? ' · Personnel' : scope === 'foyer' ? ' · Foyer' : ''}`, 14, 22);
   doc.text(`Édité le ${dateFr(today())}`, 196, 22, { align: 'right' });
@@ -138,8 +138,8 @@ export async function exportPdf(store, mk, scope = 'tout') {
     doc.setPage(i);
     doc.setFontSize(8);
     doc.setTextColor(140);
-    doc.text(`Foyer+ · page ${i}/${pages}`, 105, 290, { align: 'center' });
+    doc.text(`Orly · page ${i}/${pages}`, 105, 290, { align: 'center' });
   }
   const b64 = doc.output('datauristring').split(',')[1];
-  await deliver(b64, `Foyer+_releve_${mk}.pdf`, 'application/pdf');
+  await deliver(b64, `Orly_releve_${mk}.pdf`, 'application/pdf');
 }
