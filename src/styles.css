@@ -439,3 +439,8 @@ button.item:active, .item .row:active { background: var(--soft); }
 .card.list .toggle-row.item { padding: 12px 16px; }
 .task .item-main b, .card.list .item-main b.wrap { white-space: normal; overflow: visible; }
 .welcome p { text-transform: none; }
+.line-n { width: 24px; height: 24px; border-radius: 50%; background: var(--violet); color: #fff; font-size: 12px; font-weight: 800; display: grid; place-items: center; flex-shrink: 0; }
+.line-total { display: flex; justify-content: space-between; align-items: center; background: var(--card); border: 1px dashed var(--line); border-radius: 10px; padding: 8px 10px; font-size: 14px; }
+.line-total b { color: var(--violet); font-size: 16px; }
+.line-edit .g3 { grid-template-columns: 1fr 1fr 1fr; }
+.line-edit label { line-height: 1.2; }

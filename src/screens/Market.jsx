@@ -120,7 +120,7 @@ function FactureForm({ rec, clienteId, onClose, onSaved }) {
     if (!cid) cid = s.save('cliente', { nom: newC.nom.trim(), telephone: newC.telephone.trim() }, { shared: false }).id;
     const paiements = [...(d.paiements || [])];
     if (num(acompte.montant) > 0) paiements.push({ id: uid(), date: d.date, montant: num(acompte.montant), mode: acompte.mode });
-    const data = { ...d, cliente: cid, lignes: lignes.map((l) => ({ ...l, qte: num(l.qte) || 1, pv: num(l.pv), pa: num(l.pa) })), livraison: num(d.livraison), frais: num(d.frais), paiements };
+    const data = { ...d, cliente: cid, lignes: lignes.map((l) => ({ ...l, qte: num(l.qte) || 1, pv: num(l.pv), pa: num(l.pa) })), remise: num(d.remise), remise_type: d.remise_type === 'pct' ? 'pct' : 'montant', livraison: num(d.livraison), frais: num(d.frais), paiements };
     const saved = s.save('facture', data, { id: rec?.id, shared: false });
     toast(isNew ? 'Facture créée ✓' : 'Facture modifiée ✓');
     onSaved(saved);
@@ -146,23 +146,43 @@ function FactureForm({ rec, clienteId, onClose, onSaved }) {
         </div>
       )}
       <h3 className="sec-t">Articles</h3>
-      {d.lignes.map((l, i) => (
-        <div className="line-edit" key={l.id}>
-          <div className="row">
-            <input className="mini-in grow" placeholder="Article (ex. Robe fillette 4 ans)" value={l.designation} onChange={(e) => upL(i, 'designation', e.target.value)} />
-            {d.lignes.length > 1 && <button className="icon-btn danger" onClick={() => setD((x) => ({ ...x, lignes: x.lignes.filter((_, j) => j !== i) }))} aria-label="Retirer l'article"><Trash2 size={17} /></button>}
+      {d.lignes.map((l, i) => {
+        const q = num(l.qte) || 1;
+        return (
+          <div className="line-edit" key={l.id}>
+            <div className="row">
+              <span className="line-n">{i + 1}</span>
+              <input className="mini-in grow" placeholder="Article (ex. Robe fillette 4 ans)" value={l.designation} onChange={(e) => upL(i, 'designation', e.target.value)} />
+              {d.lignes.length > 1 && <button className="icon-btn danger" onClick={() => setD((x) => ({ ...x, lignes: x.lignes.filter((_, j) => j !== i) }))} aria-label="Retirer l'article"><Trash2 size={17} /></button>}
+            </div>
+            <div className="g3">
+              <label>Nombre de pièces<input className="mini-in" inputMode="numeric" value={l.qte} onChange={(e) => upL(i, 'qte', e.target.value.replace(/\D/g, ''))} /></label>
+              <label>Prix fournisseur (1 pièce)<MiniMoney value={l.pa} onChange={(v) => upL(i, 'pa', v)} /></label>
+              <label>Mon prix de vente (1 pièce)<MiniMoney value={l.pv} onChange={(v) => upL(i, 'pv', v)} /></label>
+            </div>
+            <div className="line-total">
+              <span>{q} × {money(l.pv)}</span>
+              <b>= {money(q * num(l.pv))}</b>
+            </div>
+            {num(l.pa) > 0 && num(l.pv) > 0 && <small className="muted">Achat {money(q * num(l.pa))} · bénéfice sur cet article <b className={num(l.pv) >= num(l.pa) ? 'pos' : 'neg'}>{money(q * (num(l.pv) - num(l.pa)))}</b></small>}
+            <div className="chips">
+              {ARTICLE_ST.map(([k, lb]) => <button type="button" key={k} className={`chip ${l.statut === k ? 'on' : ''}`} onClick={() => upL(i, 'statut', k)}>{lb}</button>)}
+            </div>
           </div>
-          <div className="g3">
-            <label>Qté<input className="mini-in" inputMode="numeric" value={l.qte} onChange={(e) => upL(i, 'qte', e.target.value.replace(/\D/g, ''))} /></label>
-            <label>Prix fournisseur<MiniMoney value={l.pa} onChange={(v) => upL(i, 'pa', v)} /></label>
-            <label>Prix de vente<MiniMoney value={l.pv} onChange={(v) => upL(i, 'pv', v)} /></label>
-          </div>
-          <div className="chips">
-            {ARTICLE_ST.map(([k, lb]) => <button type="button" key={k} className={`chip ${l.statut === k ? 'on' : ''}`} onClick={() => upL(i, 'statut', k)}>{lb}</button>)}
-          </div>
-        </div>
-      ))}
+        );
+      })}
       <button className="btn soft" onClick={() => setD((x) => ({ ...x, lignes: [...x.lignes, { id: uid(), designation: '', qte: 1, pv: '', pa: '', statut: 'route' }] }))}><Plus size={17} /> Ajouter un article</button>
+      <Field label="Remise accordée à la cliente">
+        <div className="row gap">
+          <div className="chips" style={{ flexShrink: 0 }}>
+            <button type="button" className={`chip ${d.remise_type !== 'pct' ? 'on' : ''}`} onClick={() => up('remise_type', 'montant')}>En F</button>
+            <button type="button" className={`chip ${d.remise_type === 'pct' ? 'on' : ''}`} onClick={() => up('remise_type', 'pct')}>En %</button>
+          </div>
+          {d.remise_type === 'pct'
+            ? <input className="grow" inputMode="numeric" placeholder="Ex. 10" value={d.remise || ''} onChange={(e) => up('remise', Math.min(100, Number(e.target.value.replace(/\D/g, '') || 0)) || '')} />
+            : <div className="grow"><MoneyInput value={d.remise || ''} onChange={(v) => up('remise', v)} /></div>}
+        </div>
+      </Field>
       <div className="row gap">
         <Field label="Livraison facturée" help="Payée par la cliente"><MoneyInput value={d.livraison} onChange={(v) => up('livraison', v)} /></Field>
         <Field label="Mes frais" help="Transport, colis… (non affichés)"><MoneyInput value={d.frais} onChange={(v) => up('frais', v)} /></Field>
@@ -174,6 +194,9 @@ function FactureForm({ rec, clienteId, onClose, onSaved }) {
         </>
       )}
       <div className="totals">
+        <div className="kv"><span>Montant des articles ({t.nb} pièce{t.nb > 1 ? 's' : ''})</span><b>{money(t.sousTotal)}</b></div>
+        {t.remise > 0 && <div className="kv"><span>Remise{d.remise_type === 'pct' ? ` (${num(d.remise)} %)` : ''}</span><b className="neg">- {money(t.remise)}</b></div>}
+        {num(d.livraison) > 0 && <div className="kv"><span>Livraison</span><b>{money(d.livraison)}</b></div>}
         <div className="kv"><span>Total facture</span><b>{money(t.total)}</b></div>
         <div className="kv"><span>Coût fournisseur + frais</span><b>{money(t.cout)}</b></div>
         <div className="kv"><span>Mon bénéfice</span><b className={t.benef >= 0 ? 'pos' : 'neg'}>{money(t.benef)}</b></div>
@@ -226,13 +249,15 @@ function FactureDetail({ id, open, onClose }) {
       <div className="card list">
         {d.lignes.map((l, i) => (
           <div className="item" key={l.id || i}>
-            <div className="grow item-main"><b>{l.designation}</b><small>{num(l.qte)} × {money(l.pv)} · achat {money(l.pa)}</small></div>
+            <div className="grow item-main"><b className="wrap">{l.designation}</b><small>{num(l.qte) || 1} pièce{(num(l.qte) || 1) > 1 ? 's' : ''} × {money(l.pv)} = <b>{money((num(l.qte) || 1) * num(l.pv))}</b> · achat {money(l.pa)}/pièce</small></div>
             <button className={`st ${l.statut || 'route'}`} onClick={() => cycle(i)}>{l.statut === 'livre' ? 'Livré' : LIV_LABEL[l.statut || 'route']}</button>
           </div>
         ))}
       </div>
       {t.livraison !== 'livre' && <button className="btn ghost sm" onClick={allDelivered}><Truck size={16} /> Tout est livré</button>}
       <div className="totals">
+        <div className="kv"><span>Montant des articles</span><b>{money(t.sousTotal)}</b></div>
+        {t.remise > 0 && <div className="kv"><span>Remise{d.remise_type === 'pct' ? ` (${num(d.remise)} %)` : ''}</span><b className="neg">- {money(t.remise)}</b></div>}
         {num(d.livraison) > 0 && <div className="kv"><span>Livraison</span><b>{money(d.livraison)}</b></div>}
         <div className="kv"><span>Total</span><b>{money(t.total)}</b></div>
         <div className="kv"><span>Déjà payé</span><b className="pos">{money(t.paye)}</b></div>

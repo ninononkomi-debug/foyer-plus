@@ -42,7 +42,8 @@ export function factTotals(f) {
   const d = f.data || f;
   const lignes = d.lignes || [];
   const sousTotal = lignes.reduce((x, l) => x + num(l.qte || 1) * num(l.pv), 0);
-  const total = sousTotal + num(d.livraison);
+  const remise = Math.min(sousTotal, Math.round(d.remise_type === 'pct' ? (sousTotal * num(d.remise)) / 100 : num(d.remise)));
+  const total = sousTotal - remise + num(d.livraison);
   const paye = (d.paiements || []).reduce((x, p) => x + num(p.montant), 0);
   const achat = lignes.reduce((x, l) => x + num(l.qte || 1) * num(l.pa), 0);
   const cout = achat + num(d.frais);
@@ -51,7 +52,7 @@ export function factTotals(f) {
   const statut = total > 0 && paye >= total ? 'paid' : paye > 0 ? 'part' : 'unpaid';
   const sts = lignes.map((l) => l.statut || 'route');
   const livraison = !sts.length ? 'route' : sts.every((x) => x === 'livre') ? 'livre' : sts.some((x) => x === 'route') ? 'route' : sts.every((x) => x !== 'route') && sts.some((x) => x === 'dispo') ? 'dispo' : 'route';
-  return { sousTotal, total, paye, reste, achat, cout, benef, statut, livraison, nb: lignes.reduce((x, l) => x + num(l.qte || 1), 0) };
+  return { sousTotal, remise, total, paye, reste, achat, cout, benef, statut, livraison, nb: lignes.reduce((x, l) => x + num(l.qte || 1), 0) };
 }
 export const STATUT_LABEL = { paid: 'Soldée', part: 'Acompte versé', unpaid: 'Non payée' };
 export const LIV_LABEL = { route: 'En route', dispo: 'Disponible', livre: 'Livrée' };

@@ -136,7 +136,7 @@ function footer(ctx, on, y, b) {
 }
 
 function totalsBlock(ctx, on, y, rows, big) {
-  const x0 = W / 2 - 20;
+  const x0 = 360;
   for (const [l, v, color] of rows) {
     ctx.font = F(600, 26); if (on) { ctx.fillStyle = C.muted; ctx.fillText(l, x0, y + 28); }
     ctx.textAlign = 'right'; ctx.font = F(700, 26); if (on) { ctx.fillStyle = color || C.ink; ctx.fillText(v, W - PAD, y + 28); }
@@ -169,7 +169,7 @@ export async function invoiceCanvas({ facture, cliente, boutique }) {
     if (on) {
       ctx.fillStyle = '#fff'; ctx.fillText('ARTICLE', PAD + 24, y + 36);
       ctx.textAlign = 'center'; ctx.fillText('QTÉ', cQ, y + 36);
-      ctx.textAlign = 'right'; ctx.fillText('PRIX', cP + 70, y + 36); ctx.fillText('TOTAL', cT, y + 36); ctx.textAlign = 'left';
+      ctx.textAlign = 'right'; ctx.fillText('PRIX U.', cP + 70, y + 36); ctx.fillText('TOTAL', cT, y + 36); ctx.textAlign = 'left';
     }
     y += 72;
     for (const l of d.lignes || []) {
@@ -189,7 +189,8 @@ export async function invoiceCanvas({ facture, cliente, boutique }) {
       y += 8;
     }
     y += 12;
-    const rows = [['Sous-total', money(t.sousTotal)]];
+    const rows = [[`Montant des articles (${t.nb} pièce${t.nb > 1 ? 's' : ''})`, money(t.sousTotal)]];
+    if (t.remise > 0) rows.push([`Remise${d.remise_type === 'pct' ? ` ${num(d.remise)} %` : ''}`, `- ${money(t.remise)}`, C.primary]);
     if (num(d.livraison)) rows.push(['Livraison', money(d.livraison)]);
     rows.push(['Total', money(t.total)]);
     if (t.paye > 0) rows.push(['Acompte versé', `- ${money(t.paye)}`, C.green]);
