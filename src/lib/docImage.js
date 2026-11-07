@@ -203,7 +203,20 @@ function table(ctx, on, y, cols, rows, opt = {}) {
     ctx.textAlign = 'left';
   }
   let yy = y + headH;
+  const groups = [];
   rows.forEach((r, ri) => {
+    if (r.group) {
+      const gh = 54;
+      groups.push([yy, r]);
+      if (on) {
+        ctx.fillStyle = C.soft; ctx.fillRect(x0, yy, width, gh);
+        ctx.font = F(800, 22); ctx.fillStyle = C.deep; ctx.fillText(r.group, x0 + pad, yy + 35);
+        if (r.right) { ctx.textAlign = 'right'; ctx.fillText(r.right, x0 + width - pad, yy + 35); ctx.textAlign = 'left'; }
+        ctx.fillStyle = C.line; ctx.fillRect(x0, yy + gh - 2, width, 2);
+      }
+      yy += gh;
+      return;
+    }
     // mesure de la hauteur de la ligne
     ctx.font = F(600, 25);
     const cells = r.cells.map((v, i) => wrap(ctx, String(v ?? ''), cols[i].w - 2 * pad));
@@ -233,6 +246,12 @@ function table(ctx, on, y, cols, rows, opt = {}) {
     ctx.strokeRect(x0, y, width, yy - y);
     let x = x0;
     for (let i = 0; i < cols.length - 1; i++) { x += cols[i].w; ctx.beginPath(); ctx.moveTo(x, y + headH); ctx.lineTo(x, yy); ctx.stroke(); }
+    // les lignes « Facture N° … » passent par-dessus les séparateurs de colonnes
+    for (const [gy, r] of groups) {
+      ctx.fillStyle = C.soft; ctx.fillRect(x0 + 1, gy, width - 2, 52);
+      ctx.font = F(800, 22); ctx.fillStyle = C.deep; ctx.fillText(r.group, x0 + pad, gy + 35);
+      if (r.right) { ctx.textAlign = 'right'; ctx.fillText(r.right, x0 + width - pad, gy + 35); ctx.textAlign = 'left'; }
+    }
   }
   return yy;
 }
@@ -271,7 +290,7 @@ function infoBox(ctx, on, y, rows) {
   return y + rows.length * h;
 }
 
-function docHead(ctx, on, b, title, info, cliente, clientLabel) {
+function docHead(ctx, on, b, title, cliente, refs) {
   if (on) {
     const g = ctx.createLinearGradient(0, 0, W, 0);
     g.addColorStop(0, C.deep); g.addColorStop(1, C.primary);
@@ -284,27 +303,35 @@ function docHead(ctx, on, b, title, info, cliente, clientLabel) {
     ctx.drawImage(logoImg, PAD, y, L, L); ctx.restore();
   }
   const x = PAD + L + 24;
-  ctx.font = F(800, 40); if (on) { ctx.fillStyle = C.ink; ctx.fillText(b.nom || 'OrlyMarket', x, y + 46); }
-  ctx.font = F(600, 22); if (on) { ctx.fillStyle = C.muted; ctx.fillText(b.slogan || 'Boutique en ligne', x, y + 80); }
+  ctx.font = F(800, 38); if (on) { ctx.fillStyle = C.ink; ctx.fillText(b.nom || 'OrlyMarket', x, y + 46); }
+  ctx.font = F(600, 21); if (on) { ctx.fillStyle = C.muted; ctx.fillText(b.slogan || 'Boutique en ligne', x, y + 78); }
   const info1 = [b.whatsapp && `WhatsApp : ${b.whatsapp}`, b.adresse].filter(Boolean).join('  ·  ');
-  if (on && info1) { ctx.font = F(600, 21); ctx.fillStyle = C.muted; ctx.fillText(info1, x, y + 112); }
-  y += L + 40;
-  // titre du document
-  ctx.font = F(800, 58); if (on) { ctx.fillStyle = C.primary; ctx.fillText(title, PAD, y + 50); }
-  if (on) { ctx.fillStyle = C.primary; ctx.fillRect(PAD, y + 66, 90, 6); }
-  const yInfo = infoBox(ctx, on, y, info);
-  y = Math.max(y + 100, yInfo) + 28;
-  // client
-  const ch = 130;
+  if (on && info1) { ctx.font = F(600, 20); ctx.fillStyle = C.muted; ctx.fillText(info1, x, y + 108); }
+  // titre à droite
+  ctx.textAlign = 'right'; ctx.font = F(800, 54);
+  if (on) { ctx.fillStyle = C.primary; ctx.fillText(title, W - PAD, y + 62); }
+  ctx.textAlign = 'left';
+  y += L + 28;
+  if (on) { ctx.fillStyle = C.ink; ctx.fillRect(PAD, y, W - 2 * PAD, 3); }
+  y += 22;
+  // ligne cliente (gauche) / références (droite)
   if (on) {
-    ctx.strokeStyle = '#D9CDD3'; ctx.lineWidth = 2; ctx.strokeRect(PAD, y, W - 2 * PAD, ch);
-    ctx.fillStyle = C.primary; ctx.fillRect(PAD, y, 8, ch);
-    ctx.font = F(700, 19); ctx.fillStyle = C.muted; ctx.fillText(clientLabel, PAD + 30, y + 36);
-    ctx.font = F(800, 32); ctx.fillStyle = C.ink; ctx.fillText(cliente.nom || 'Cliente', PAD + 30, y + 78);
+    ctx.font = F(700, 19); ctx.fillStyle = C.muted; ctx.fillText('CLIENTE', PAD, y + 22);
+    ctx.font = F(800, 30); ctx.fillStyle = C.ink; ctx.fillText(cliente.nom || 'Cliente', PAD, y + 60);
     const extra = [cliente.telephone && `Tél. ${cliente.telephone}`, cliente.quartier].filter(Boolean).join('  ·  ');
-    if (extra) { ctx.font = F(600, 22); ctx.fillStyle = C.muted; ctx.fillText(extra, PAD + 30, y + 112); }
+    if (extra) { ctx.font = F(600, 21); ctx.fillStyle = C.muted; ctx.fillText(extra, PAD, y + 92); }
+    ctx.textAlign = 'right';
+    refs.forEach(([l, v], i) => {
+      const yy = y + 30 + i * 36;
+      ctx.font = F(800, 26); ctx.fillStyle = C.ink; ctx.fillText(v, W - PAD, yy);
+      const vw = ctx.measureText(v).width;
+      ctx.font = F(600, 22); ctx.fillStyle = C.muted; ctx.fillText(l, W - PAD - vw - 12, yy);
+    });
+    ctx.textAlign = 'left';
   }
-  return y + ch + 34;
+  y += Math.max(104, refs.length * 36 + 20);
+  if (on) { ctx.fillStyle = C.line; ctx.fillRect(PAD, y, W - 2 * PAD, 2); }
+  return y + 28;
 }
 
 function sectionTitle(ctx, on, y, t) {
@@ -312,49 +339,52 @@ function sectionTitle(ctx, on, y, t) {
   return y + 40;
 }
 
+const ST_TXT = { route: ['En route', C.amber], dispo: ['Disponible', C.blue], livre: ['Livré', C.green] };
+const ART_COLS = () => [
+  { t: 'QTÉ', w: 100, a: 'center', bold: true },
+  { t: 'DÉSIGNATION', w: W - 2 * PAD - 100 - 210 - 220 },
+  { t: 'PRIX UNITAIRE', w: 210, a: 'right' },
+  { t: 'MONTANT', w: 220, a: 'right' },
+];
+const artRows = (d) => (d.lignes || []).map((l) => {
+  const q = num(l.qte) || 1;
+  return { cells: [String(q), l.designation, money(l.pv), money(q * num(l.pv))], sub: ST_TXT[l.statut || 'route'], subCol: 1 };
+});
+
+function lettres(ctx, on, y, total, mot) {
+  ctx.font = F(600, 23);
+  const ls = wrap(ctx, `Arrêtée la présente ${mot} à la somme de ${enLettres(total)} francs CFA (${money(total)}).`, W - 2 * PAD);
+  ls.forEach((ln, i) => { if (on) { ctx.fillStyle = C.ink; ctx.fillText(ln, PAD, y + 24 + i * 32); } });
+  return y + ls.length * 32 + 26;
+}
+
+function versements(ctx, on, y, pays) {
+  if (!pays.length) return y;
+  y = sectionTitle(ctx, on, y, 'Versements reçus');
+  y = table(ctx, on, y, [
+    { t: 'DATE DU VERSEMENT', w: 300 }, { t: 'MODE DE PAIEMENT', w: W - 2 * PAD - 300 - 250 }, { t: 'MONTANT', w: 250, a: 'right' },
+  ], pays.map((p) => ({ cells: [dateFr(p.date), MODE_L[p.mode] || 'Espèces', money(p.montant)] })));
+  return y + 26;
+}
+
 // ---------------- FACTURE ----------------
 export async function invoiceCanvas({ facture, cliente, boutique }) {
   await Promise.all([fontsReady(), loadLogo()]);
   const d = facture.data;
   const t = factTotals(facture);
-  const stText = { route: ['En route', C.amber], dispo: ['Disponible', C.blue], livre: ['Livré', C.green] };
   return compose((ctx, on) => {
-    let y = docHead(ctx, on, boutique, 'FACTURE', [['N° de facture', d.numero], ['Date', dateFr(d.date)]], cliente || {}, 'FACTURÉ À');
-    const cols = [
-      { t: 'QTÉ', w: 110, a: 'center', bold: true },
-      { t: 'DÉSIGNATION', w: W - 2 * PAD - 110 - 210 - 220 },
-      { t: 'PRIX UNITAIRE', w: 210, a: 'right', muted: false },
-      { t: 'MONTANT', w: 220, a: 'right' },
-    ];
-    const rows = (d.lignes || []).map((l) => {
-      const q = num(l.qte) || 1;
-      return { cells: [String(q), l.designation, money(l.pv), money(q * num(l.pv))], sub: stText[l.statut || 'route'], subCol: 1 };
-    });
-    y = table(ctx, on, y, cols, rows);
+    let y = docHead(ctx, on, boutique, 'FACTURE', cliente || {}, [['N°', d.numero], ['Date :', dateFr(d.date)]]);
+    y = table(ctx, on, y, ART_COLS(), artRows(d));
     y += 26;
     const rec = [{ l: `Total brut (${t.nb} pièce${t.nb > 1 ? 's' : ''})`, v: money(t.sousTotal) }];
     if (t.remise > 0) rec.push({ l: `Remise${d.remise_type === 'pct' ? ` (${num(d.remise)} %)` : ''}`, v: `- ${money(t.remise)}`, vfg: C.primary });
     if (num(d.livraison)) rec.push({ l: 'Frais de livraison', v: `+ ${money(d.livraison)}` });
     rec.push({ l: 'NET À PAYER', v: money(t.total), bold: true, fill: C.ink, fg: '#fff' });
-    if (t.paye > 0) rec.push({ l: `Déjà versé${(d.paiements || []).length > 1 ? ` (${d.paiements.length} versements)` : ''}`, v: `- ${money(t.paye)}`, vfg: C.green });
+    if (t.paye > 0) rec.push({ l: 'Déjà versé', v: `- ${money(t.paye)}`, vfg: C.green });
     rec.push(t.reste > 0 ? { l: 'RESTE À PAYER', v: money(t.reste), big: true, fill: C.primary, fg: '#fff' } : { l: 'FACTURE SOLDÉE', v: money(t.total), big: true, fill: C.green, fg: '#fff' });
     y = recap(ctx, on, y, rec);
-    y += 30;
-    // montant en lettres
-    ctx.font = F(600, 23);
-    const phrase = `Arrêtée la présente facture à la somme de ${enLettres(t.total)} francs CFA (${money(t.total)}).`;
-    const ls = wrap(ctx, phrase, W - 2 * PAD);
-    ls.forEach((ln, i) => { if (on) { ctx.fillStyle = C.ink; ctx.fillText(ln, PAD, y + 24 + i * 32); } });
-    y += ls.length * 32 + 26;
-    // versements
-    if ((d.paiements || []).length) {
-      y = sectionTitle(ctx, on, y, 'Versements reçus');
-      y = table(ctx, on, y, [
-        { t: 'DATE', w: 260 }, { t: 'MODE DE PAIEMENT', w: W - 2 * PAD - 260 - 260 }, { t: 'MONTANT', w: 260, a: 'right' },
-      ], d.paiements.map((p) => ({ cells: [dateFr(p.date), MODE_L[p.mode] || 'Espèces', money(p.montant)] })));
-      y += 26;
-    }
-    if (t.reste > 0) y = payBlock(ctx, on, y, boutique);
+    y = lettres(ctx, on, y + 30, t.total, 'facture');
+    y = versements(ctx, on, y, d.paiements || []);
     if (d.note_cliente) {
       ctx.font = F(600, 23);
       const nl = wrap(ctx, `Note : ${d.note_cliente}`, W - 2 * PAD);
@@ -366,39 +396,39 @@ export async function invoiceCanvas({ facture, cliente, boutique }) {
 }
 
 // ---------------- RELEVÉ DES PAIEMENTS ----------------
+// Une seule facture : même présentation que la facture, centrée sur les versements.
+// Plusieurs factures : les articles sont regroupés par facture dans un seul tableau.
 export async function statementCanvas({ factures, cliente, boutique }) {
-  await Promise.all([fontsReady(), loadLogo()]);
-  const today = new Date();
-  const dstr = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
-  let gTotal = 0, gPaye = 0;
-  factures.forEach((f) => { const t = factTotals(f); gTotal += t.total; gPaye += t.paye; });
-  const gReste = Math.max(0, gTotal - gPaye);
   const fs = [...factures].sort((a, b) => (a.data.date || '').localeCompare(b.data.date || ''));
+  if (fs.length === 1) return invoiceCanvas({ facture: fs[0], cliente, boutique });
+  await Promise.all([fontsReady(), loadLogo()]);
+  let gTotal = 0, gPaye = 0;
+  fs.forEach((f) => { const t = factTotals(f); gTotal += t.total; gPaye += t.paye; });
+  const gReste = Math.max(0, gTotal - gPaye);
+  const now = new Date();
+  const dstr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
   return compose((ctx, on) => {
-    let y = docHead(ctx, on, boutique, 'RELEVÉ', [['Factures', String(fs.length)], ['Date', dstr]], cliente || {}, 'CLIENTE');
-    y = sectionTitle(ctx, on, y, 'Vos factures');
-    const w4 = (W - 2 * PAD - 230 - 170) / 3;
-    y = table(ctx, on, y, [
-      { t: 'FACTURE', w: 230, bold: true }, { t: 'DATE', w: 170 }, { t: 'MONTANT', w: w4, a: 'right' }, { t: 'VERSÉ', w: w4, a: 'right' }, { t: 'RESTE', w: w4, a: 'right' },
-    ], fs.map((f) => { const t = factTotals(f); return { cells: [f.data.numero, dateFr(f.data.date), money(t.total), money(t.paye), money(t.reste)] }; }));
-    y += 30;
-    const pays = [];
-    fs.forEach((f) => (f.data.paiements || []).forEach((p) => pays.push({ p, n: f.data.numero })));
-    pays.sort((a, b) => (a.p.date || '').localeCompare(b.p.date || ''));
-    if (pays.length) {
-      y = sectionTitle(ctx, on, y, 'Vos versements');
-      y = table(ctx, on, y, [
-        { t: 'DATE', w: 200 }, { t: 'FACTURE', w: 250 }, { t: 'MODE', w: W - 2 * PAD - 200 - 250 - 240 }, { t: 'MONTANT', w: 240, a: 'right' },
-      ], pays.map(({ p, n }) => ({ cells: [dateFr(p.date), n, MODE_L[p.mode] || 'Espèces', money(p.montant)] })));
-      y += 26;
-    }
+    let y = docHead(ctx, on, boutique, 'FACTURES', cliente || {}, [['Nombre :', String(fs.length)], ['Au', dstr]]);
+    const rows = [];
+    fs.forEach((f) => {
+      const t = factTotals(f);
+      rows.push({ group: `Facture N° ${f.data.numero} du ${dateFr(f.data.date)}`, right: `Net : ${money(t.total)}` });
+      rows.push(...artRows(f.data));
+      if (t.remise > 0) rows.push({ cells: ['', `Remise${f.data.remise_type === 'pct' ? ` (${num(f.data.remise)} %)` : ''}`, '', `- ${money(t.remise)}`] });
+      if (num(f.data.livraison)) rows.push({ cells: ['', 'Frais de livraison', '', money(f.data.livraison)] });
+    });
+    y = table(ctx, on, y, ART_COLS(), rows);
+    y += 26;
     y = recap(ctx, on, y, [
-      { l: 'Total des factures', v: money(gTotal) },
-      { l: 'Total déjà versé', v: `- ${money(gPaye)}`, vfg: C.green },
+      { l: 'Total des factures', v: money(gTotal), bold: true },
+      { l: 'Déjà versé', v: `- ${money(gPaye)}`, vfg: C.green },
       gReste > 0 ? { l: 'RESTE À PAYER', v: money(gReste), big: true, fill: C.primary, fg: '#fff' } : { l: 'TOUT EST PAYÉ', v: money(gPaye), big: true, fill: C.green, fg: '#fff' },
     ]);
     y += 30;
-    if (gReste > 0) y = payBlock(ctx, on, y, boutique);
+    const pays = [];
+    fs.forEach((f) => (f.data.paiements || []).forEach((p) => pays.push(p)));
+    pays.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    y = versements(ctx, on, y, pays);
     return footer(ctx, on, y + 10, boutique);
   });
 }
