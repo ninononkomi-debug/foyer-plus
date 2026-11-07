@@ -534,7 +534,9 @@ const EP_PARTS = [
   { k: 'loisirs', label: 'Loisirs', color: '#2563A8', help: 'Sorties, vacances, plaisirs' },
   { k: 'divers', label: 'Divers', color: '#B7700A', help: 'Imprévus du mois' },
 ];
-const EP_DEF = { epargne: 50, loisirs: 20, divers: 30 };
+const EP_DEF = { epargne: 20, loisirs: 10, divers: 10 };
+// anciens pourcentages par défaut (50/20/30) jugés trop forts : on les remplace
+const isOldDef = (p) => p && num(p.epargne) === 50 && num(p.loisirs) === 20 && num(p.divers) === 30;
 
 function EpargneFoyer({ mk, isOrly }) {
   const s = useStore();
@@ -542,7 +544,8 @@ function EpargneFoyer({ mk, isOrly }) {
   const [pctOpen, setPctOpen] = useState(false);
   const rec = s.list('epargne_foyer')[0];
   const d = rec?.data || { pct: EP_DEF, mois: {} };
-  const pct = { ...EP_DEF, ...(d.pct || {}) };
+  const pct = isOldDef(d.pct) ? { ...EP_DEF } : { ...EP_DEF, ...(d.pct || {}) };
+  const libre = Math.max(0, 100 - EP_PARTS.reduce((x, p) => x + num(pct[p.k]), 0));
   const b = budgetMois(s, mk);
   const loyer = s.list('loyer_mois').find((x) => x.data.mois === mk);
   const resteLoyer = loyer ? num(loyer.data.montant) - (loyer.data.lignes || []).reduce((x, l) => x + num(l.montant), 0) : 0;
@@ -581,6 +584,7 @@ function EpargneFoyer({ mk, isOrly }) {
           );
         })}
       </div>
+      {libre > 0 && <div className="kv" style={{ padding: '0 4px' }}><span>Reste libre pour le mois ({libre} %)</span><b>{money(Math.round((base * libre) / 100))}</b></div>}
       <p className="muted small">Cochez quand l'argent est vraiment mis de côté. Les totaux ci-dessous s'additionnent mois après mois.</p>
       <div className="caisses">
         {EP_PARTS.map((p) => <div className="caisse" key={p.k} style={{ '--c': p.color }}><small>Total {p.label}</small><b>{money(cumul[p.k])}</b></div>)}
@@ -596,13 +600,13 @@ function EpPct({ pct, onClose, onSave }) {
   const [p, setP] = useState({ ...pct });
   const total = EP_PARTS.reduce((x, k) => x + num(p[k.k]), 0);
   return (
-    <Sheet title="Répartition de l'épargne" onClose={onClose} footer={<button className="btn primary full" disabled={total !== 100} onClick={() => onSave(p)}>Enregistrer ({total} %)</button>}>
+    <Sheet title="Répartition de l'épargne" onClose={onClose} footer={<button className="btn primary full" disabled={total > 100} onClick={() => onSave(p)}>Enregistrer ({total} % mis de côté)</button>}>
       {EP_PARTS.map((k) => (
         <Field key={k.k} label={`${k.label} : ${p[k.k]} %`} help={k.help}>
-          <input type="range" min="0" max="100" step="5" value={p[k.k]} onChange={(e) => setP({ ...p, [k.k]: Number(e.target.value) })} />
+          <input type="range" min="0" max="50" step="5" value={p[k.k]} onChange={(e) => setP({ ...p, [k.k]: Number(e.target.value) })} />
         </Field>
       ))}
-      {total !== 100 && <div className="alert warn">Le total doit faire 100 %.</div>}
+      {total > 100 ? <div className="alert warn">Le total ne peut pas dépasser 100 %.</div> : <p className="muted small">Les {100 - total} % restants restent libres pour le mois.</p>}
     </Sheet>
   );
 }
