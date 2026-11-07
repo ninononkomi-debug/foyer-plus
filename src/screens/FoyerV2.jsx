@@ -40,7 +40,7 @@ export function seedFoyer(s) {
     charges: [L('Loyer', 230000), L('Budget nourriture', 110000), L('Wi-Fi', 25000), L('Tontine', 20000), L('Taxi', 50000), L('Voiture', 50000), L('Crédit bancaire', 350000)],
   }, { shared: true });
   s.save('revenu_fixe', {
-    nom: "Revenu Ministère de l'Accès à l'Eau et l'Électricité", titulaire: 'monsieur', montant: 0, ordre: 2, faits: {},
+    nom: "Revenu Ministère de l'Accès à l'Eau et l'Électricité", titulaire: 'monsieur', montant: 243000, maj243: true, ordre: 2, faits: {},
     charges: [L('Taxi', 50000), L('Eau à boire', 20000), L('Produits de toilette', 25000), L('Crédit bancaire', 58000), L('Caisse famille', 5000)],
   }, { shared: true });
   if (!s.list('loyer_cfg').length) {
@@ -65,7 +65,13 @@ export default function FoyerV2({ initial, isOrly }) {
   const s = useStore();
   const [sec, setSec] = useState(initial || 'budget');
   const [month, setMonth] = useState(monthKey(today()));
-  useEffect(() => { if (isOrly && s.ready) seedFoyer(s); }, [s.ready, s.lastSyncAt]);
+  useEffect(() => {
+    if (!isOrly || !s.ready) return;
+    seedFoyer(s);
+    // salaire de Monsieur donné par Orly : 243 000 F (si encore vide)
+    const m = s.list('revenu_fixe').find((r) => r.data.titulaire === 'monsieur' && !num(r.data.montant) && !r.data.maj243);
+    if (m) s.save('revenu_fixe', { ...m.data, montant: 243000, maj243: true }, { id: m.id });
+  }, [s.ready, s.lastSyncAt]);
   return (
     <div className="screen">
       <ScreenHead title="Foyer" sub={s.household ? s.household.name : 'Revenus, loyer, dettes, tontines, épargne'} />
@@ -527,29 +533,27 @@ function TontineDetail({ id, onEdit, onClose }) {
 }
 
 // =====================================================================
-// 5. Épargne du foyer : on répartit ce qui reste chaque mois
+// 5. Épargne du foyer : montants fixes pris sur le reste des deux salaires
+//    (le loyer du locataire n'entre pas ici : il a déjà sa propre répartition)
 // =====================================================================
 const EP_PARTS = [
   { k: 'epargne', label: 'Épargne', color: '#0F8A55', help: 'On n’y touche pas' },
   { k: 'loisirs', label: 'Loisirs', color: '#2563A8', help: 'Sorties, vacances, plaisirs' },
   { k: 'divers', label: 'Divers', color: '#B7700A', help: 'Imprévus du mois' },
 ];
-const EP_DEF = { epargne: 20, loisirs: 10, divers: 10 };
-// anciens pourcentages par défaut (50/20/30) jugés trop forts : on les remplace
-const isOldDef = (p) => p && num(p.epargne) === 50 && num(p.loisirs) === 20 && num(p.divers) === 30;
+const FIX_DEF = { epargne: 20000, loisirs: 10000, divers: 15000 };
 
 function EpargneFoyer({ mk, isOrly }) {
   const s = useStore();
   const toast = useToast();
-  const [pctOpen, setPctOpen] = useState(false);
+  const [fixOpen, setFixOpen] = useState(false);
   const rec = s.list('epargne_foyer')[0];
-  const d = rec?.data || { pct: EP_DEF, mois: {} };
-  const pct = isOldDef(d.pct) ? { ...EP_DEF } : { ...EP_DEF, ...(d.pct || {}) };
-  const libre = Math.max(0, 100 - EP_PARTS.reduce((x, p) => x + num(pct[p.k]), 0));
+  const d = rec?.data || { mois: {} };
+  const fixes = { ...FIX_DEF, ...(d.fixes || {}) };
   const b = budgetMois(s, mk);
-  const loyer = s.list('loyer_mois').find((x) => x.data.mois === mk);
-  const resteLoyer = loyer ? num(loyer.data.montant) - (loyer.data.lignes || []).reduce((x, l) => x + num(l.montant), 0) : 0;
-  const base = Math.max(0, b.reste) + Math.max(0, resteLoyer);
+  const base = Math.max(0, b.reste);
+  const totalFixe = EP_PARTS.reduce((x, p) => x + num(fixes[p.k]), 0);
+  const libre = base - totalFixe;
   const m = (d.mois || {})[mk] || {};
   const save = (data) => s.save('epargne_foyer', data, { id: rec?.id, shared: rec ? undefined : true });
   const toggle = (k, montant) => {
@@ -557,56 +561,60 @@ function EpargneFoyer({ mk, isOrly }) {
     const x = { ...(mois[mk] || {}) };
     if (x[k]?.fait) delete x[k]; else x[k] = { fait: true, montant, date: today() };
     mois[mk] = x;
-    save({ ...d, pct, mois });
+    save({ ...d, fixes, mois });
   };
   const cumul = {};
   EP_PARTS.forEach((p) => { cumul[p.k] = 0; });
   Object.values(d.mois || {}).forEach((x) => EP_PARTS.forEach((p) => { if (x[p.k]?.fait) cumul[p.k] += num(x[p.k].montant); }));
   const om = isOrly ? caisses(s).epargne.solde : null;
+  const rs = revenusFixes(s).filter((r) => num(r.data.montant) > 0);
   return (
     <>
       <section className="hero small">
-        <p>À répartir en {monthLabel(mk).split(' ')[0]}</p>
+        <p>Reste de nos deux salaires · {monthLabel(mk).split(' ')[0]}</p>
         <h2>{money(base)}</h2>
-        <small>Reste des revenus après charges {money(Math.max(0, b.reste))}{resteLoyer > 0 ? ` + reste du loyer ${money(resteLoyer)}` : ''}</small>
+        <small>{rs.map((r) => `${r.data.titulaire === 'monsieur' ? 'Monsieur' : 'Moi'} ${money(num(r.data.montant) - (r.data.charges || []).reduce((x, c) => x + num(c.montant), 0))}`).join(' · ')} · loyer non compté</small>
       </section>
-      {b.reste < 0 && <div className="alert danger">Les charges dépassent les revenus de {money(-b.reste)} : rien à épargner ce mois. Revoyez les charges dans « Revenus & charges ».</div>}
+      {b.aRenseigner.length > 0 && <div className="alert warn">Revenu à renseigner : {b.aRenseigner.map((r) => r.data.nom).join(', ')}.</div>}
+      {libre < 0 && <div className="alert danger">Le reste ({money(base)}) ne couvre pas les montants prévus ({money(totalFixe)}). Il manque {money(-libre)} : baissez les montants ou revoyez les charges.</div>}
       <div className="card list">
         {EP_PARTS.map((p) => {
           const done = m[p.k]?.fait;
-          const montant = done ? num(m[p.k].montant) : Math.round((base * num(pct[p.k])) / 100);
+          const montant = done ? num(m[p.k].montant) : num(fixes[p.k]);
           return (
             <div className="task" key={p.k}>
               <button className={`check ${done ? 'on' : ''}`} onClick={() => toggle(p.k, montant)} disabled={!done && !montant}>{done && <Check size={16} strokeWidth={3} />}</button>
-              <div className="grow item-main"><b className={done ? 'done-t' : ''}>{p.label} · {pct[p.k]} %</b><small>{done ? `Mis de côté le ${dateFr(m[p.k].date)}` : p.help}</small></div>
+              <div className="grow item-main"><b className={done ? 'done-t' : ''}>{p.label}</b><small>{done ? `Mis de côté le ${dateFr(m[p.k].date)}` : p.help}</small></div>
               <b style={{ color: p.color }}>{money(montant)}</b>
             </div>
           );
         })}
       </div>
-      {libre > 0 && <div className="kv" style={{ padding: '0 4px' }}><span>Reste libre pour le mois ({libre} %)</span><b>{money(Math.round((base * libre) / 100))}</b></div>}
-      <p className="muted small">Cochez quand l'argent est vraiment mis de côté. Les totaux ci-dessous s'additionnent mois après mois.</p>
+      <div className="totals">
+        <div className="kv"><span>Mis de côté prévu</span><b>{money(totalFixe)}</b></div>
+        <div className="kv big"><span>Reste libre pour le mois</span><b className={libre < 0 ? 'neg' : 'pos'}>{money(libre)}</b></div>
+      </div>
+      <p className="muted small">Cochez quand l'argent est vraiment mis de côté. Les totaux s'additionnent mois après mois.</p>
       <div className="caisses">
         {EP_PARTS.map((p) => <div className="caisse" key={p.k} style={{ '--c': p.color }}><small>Total {p.label}</small><b>{money(cumul[p.k])}</b></div>)}
         {om !== null && <div className="caisse" style={{ '--c': '#D3145A' }}><small>Épargne OrlyMarket</small><b>{money(om)}</b></div>}
       </div>
-      <button className="btn ghost full" onClick={() => setPctOpen(true)}>Modifier les pourcentages</button>
-      {pctOpen && <EpPct pct={pct} onClose={() => setPctOpen(false)} onSave={(p) => { save({ ...d, pct: p, mois: d.mois || {} }); toast('Enregistré ✓'); setPctOpen(false); }} />}
+      <button className="btn ghost full" onClick={() => setFixOpen(true)}>Modifier les montants</button>
+      {fixOpen && <FixSheet fixes={fixes} base={base} onClose={() => setFixOpen(false)} onSave={(f) => { save({ ...d, fixes: f, mois: d.mois || {} }); toast('Enregistré ✓'); setFixOpen(false); }} />}
     </>
   );
 }
 
-function EpPct({ pct, onClose, onSave }) {
-  const [p, setP] = useState({ ...pct });
-  const total = EP_PARTS.reduce((x, k) => x + num(p[k.k]), 0);
+function FixSheet({ fixes, base, onClose, onSave }) {
+  const [f, setF] = useState({ ...fixes });
+  const total = EP_PARTS.reduce((x, k) => x + num(f[k.k]), 0);
   return (
-    <Sheet title="Répartition de l'épargne" onClose={onClose} footer={<button className="btn primary full" disabled={total > 100} onClick={() => onSave(p)}>Enregistrer ({total} % mis de côté)</button>}>
+    <Sheet title="Montants à mettre de côté" onClose={onClose} footer={<button className="btn primary full" onClick={() => onSave(Object.fromEntries(EP_PARTS.map((k) => [k.k, num(f[k.k])])))}>Enregistrer</button>}>
+      <p className="muted small">Chaque mois, sur le reste de vos deux salaires ({money(base)}).</p>
       {EP_PARTS.map((k) => (
-        <Field key={k.k} label={`${k.label} : ${p[k.k]} %`} help={k.help}>
-          <input type="range" min="0" max="50" step="5" value={p[k.k]} onChange={(e) => setP({ ...p, [k.k]: Number(e.target.value) })} />
-        </Field>
+        <Field key={k.k} label={k.label} help={k.help}><MoneyInput value={f[k.k]} onChange={(v) => setF({ ...f, [k.k]: v })} /></Field>
       ))}
-      {total > 100 ? <div className="alert warn">Le total ne peut pas dépasser 100 %.</div> : <p className="muted small">Les {100 - total} % restants restent libres pour le mois.</p>}
+      <div className={`alert ${total > base ? 'danger' : 'info'}`}>Total {money(total)} · reste libre {money(base - total)}</div>
     </Sheet>
   );
 }
