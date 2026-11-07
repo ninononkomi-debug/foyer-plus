@@ -223,7 +223,7 @@ function Loyer({ mk }) {
   const lignes = d?.lignes || [];
   const reparti = lignes.reduce((x, l) => x + num(l.montant), 0);
   const marquer = () => {
-    s.save('loyer_mois', { mois: mk, verse: true, date: today(), montant: num(c.montant), lignes: (c.modele || []).map((m) => ({ id: uid(), libelle: m.libelle, montant: num(m.montant), fait: false })) }, { shared: true });
+    s.save('loyer_mois', { mois: mk, verse: true, date: today(), montant: num(c.montant), lignes: (c.modele || []).map((m) => ({ id: uid(), libelle: m.libelle, montant: num(m.montant), env: m.env || '', fait: false })) }, { shared: true });
     toast('Loyer reçu ✓');
   };
   const saveLignes = (ls) => s.save('loyer_mois', { ...d, lignes: ls }, { id: rec.id });
@@ -251,12 +251,15 @@ function Loyer({ mk }) {
             {lignes.map((l) => (
               <div className="task" key={l.id}>
                 <button className={`check ${l.fait ? 'on' : ''}`} onClick={() => saveLignes(lignes.map((x) => (x.id === l.id ? { ...x, fait: !x.fait } : x)))}>{l.fait && <Check size={16} strokeWidth={3} />}</button>
-                <button className="grow item-main" style={{ textAlign: 'left' }} onClick={() => setLigne(l)}><b className={l.fait ? 'done-t' : ''}>{l.libelle}</b></button>
+                <button className="grow item-main" style={{ textAlign: 'left' }} onClick={() => setLigne(l)}><b className={l.fait ? 'done-t' : ''}>{l.libelle}</b>{l.env && <small>→ enveloppe {ENVS.find((e) => e[0] === l.env)?.[1]}</small>}</button>
                 <b>{money(l.montant)}</b>
               </div>
             ))}
           </div>
-          <button className="btn soft sm" onClick={() => setLigne({})}><Plus size={15} /> Ajouter une ligne</button>
+          <div className="row gap">
+            <button className="btn soft sm grow" onClick={() => setLigne({})}><Plus size={15} /> Ajouter une ligne</button>
+            <button className="btn soft sm grow" onClick={() => setLigne({ libelle: 'Construction', env: 'construction' })}><Plus size={15} /> Construction</button>
+          </div>
           <div className="totals">
             <div className="kv"><span>Réparti</span><b>{money(reparti)}</b></div>
             <div className="kv big"><span>Reste à répartir</span><b className={d.montant - reparti < 0 ? 'neg' : ''}>{money(num(d.montant) - reparti)}</b></div>
@@ -273,19 +276,24 @@ function Loyer({ mk }) {
           </div>
         ))}
       </div>
-      {ligne && <LigneSheet l={ligne} onClose={() => setLigne(null)} onSave={(x) => { saveLignes(ligne.id ? lignes.map((y) => (y.id === ligne.id ? x : y)) : [...lignes, x]); setLigne(null); }} onDelete={ligne.id ? () => { saveLignes(lignes.filter((y) => y.id !== ligne.id)); setLigne(null); } : null} />}
+      {ligne && <LigneSheet withEnv l={ligne} onClose={() => setLigne(null)} onSave={(x) => { saveLignes(ligne.id ? lignes.map((y) => (y.id === ligne.id ? x : y)) : [...lignes, x]); setLigne(null); }} onDelete={ligne.id ? () => { saveLignes(lignes.filter((y) => y.id !== ligne.id)); setLigne(null); } : null} />}
       {cfgOpen && <LoyerCfg cfg={cfg} onClose={() => setCfgOpen(false)} />}
     </>
   );
 }
 
-function LigneSheet({ l, onClose, onSave, onDelete, title }) {
-  const [d, setD] = useState({ id: l.id || uid(), libelle: l.libelle || '', montant: l.montant ?? '', fait: !!l.fait });
+function LigneSheet({ l, onClose, onSave, onDelete, title, withEnv }) {
+  const [d, setD] = useState({ id: l.id || uid(), libelle: l.libelle || '', montant: l.montant ?? '', fait: !!l.fait, env: l.env || '' });
   return (
     <Sheet title={title || (l.id ? 'Modifier' : 'Nouvelle ligne')} onClose={onClose}
       footer={<div className="row gap">{onDelete && <button className="btn ghost danger-t" onClick={onDelete}><Trash2 size={18} /></button>}<button className="btn primary grow" onClick={() => d.libelle.trim() && onSave({ ...d, montant: num(d.montant) })}>Enregistrer</button></div>}>
       <Field label="Libellé"><input value={d.libelle} onChange={(e) => setD({ ...d, libelle: e.target.value })} autoFocus placeholder="Ex. Scolarité, réparation…" /></Field>
       <Field label="Montant"><MoneyInput value={d.montant} onChange={(v) => setD({ ...d, montant: v })} /></Field>
+      {withEnv && (
+        <Field label="Verser dans une enveloppe du foyer ?" help="Quand la ligne est cochée, le montant s'ajoute à l'enveloppe.">
+          <div className="chips">{ENVS.map(([k, lb]) => <button type="button" key={k || 'none'} className={`chip ${d.env === k ? 'on' : ''}`} onClick={() => setD({ ...d, env: k, libelle: d.libelle || (k ? `Enveloppe ${lb}` : '') })}>{lb}</button>)}</div>
+        </Field>
+      )}
     </Sheet>
   );
 }
@@ -539,9 +547,28 @@ function TontineDetail({ id, onEdit, onClose }) {
 const EP_PARTS = [
   { k: 'epargne', label: 'Épargne', color: '#0F8A55', help: 'On n’y touche pas' },
   { k: 'loisirs', label: 'Loisirs', color: '#2563A8', help: 'Sorties, vacances, plaisirs' },
-  { k: 'divers', label: 'Divers', color: '#B7700A', help: 'Imprévus du mois' },
+  { k: 'divers', label: 'Divers / imprévus', color: '#B7700A', help: 'Imprévus du mois' },
+  { k: 'construction', label: 'Construction', color: '#7C2D12', help: 'Objectif : construire. Un peu chaque mois, même petit.' },
 ];
-const FIX_DEF = { epargne: 20000, loisirs: 10000, divers: 15000 };
+const FIX_DEF = { epargne: 20000, loisirs: 10000, divers: 15000, construction: 10000 };
+// ce qu'il y avait déjà dans chaque enveloppe au départ (donné par Orly)
+const DEPART_DEF = { epargne: 25000, loisirs: 0, divers: 0, construction: 0 };
+export const ENVS = [['', 'Aucune'], ['construction', 'Construction'], ['epargne', 'Épargne'], ['loisirs', 'Loisirs'], ['divers', 'Divers / imprévus']];
+
+// Totaux des enveloppes : départ + mois cochés + lignes du loyer versées dans une enveloppe
+export function enveloppesFoyer(s) {
+  const rec = s.list('epargne_foyer')[0];
+  const d = rec?.data || {};
+  const depart = { ...DEPART_DEF, ...(d.depart || {}) };
+  const tot = {};
+  const detail = {};
+  EP_PARTS.forEach((p) => { tot[p.k] = num(depart[p.k]); detail[p.k] = { depart: num(depart[p.k]), salaires: 0, loyer: 0 }; });
+  Object.values(d.mois || {}).forEach((x) => EP_PARTS.forEach((p) => { if (x[p.k]?.fait) { tot[p.k] += num(x[p.k].montant); detail[p.k].salaires += num(x[p.k].montant); } }));
+  for (const l of s.list('loyer_mois')) for (const ln of l.data.lignes || []) {
+    if (ln.fait && ln.env && tot[ln.env] !== undefined) { tot[ln.env] += num(ln.montant); detail[ln.env].loyer += num(ln.montant); }
+  }
+  return { tot, detail, depart };
+}
 
 function EpargneFoyer({ mk, isOrly }) {
   const s = useStore();
@@ -561,11 +588,10 @@ function EpargneFoyer({ mk, isOrly }) {
     const x = { ...(mois[mk] || {}) };
     if (x[k]?.fait) delete x[k]; else x[k] = { fait: true, montant, date: today() };
     mois[mk] = x;
-    save({ ...d, fixes, mois });
+    save({ ...d, fixes, depart: env.depart, mois });
   };
-  const cumul = {};
-  EP_PARTS.forEach((p) => { cumul[p.k] = 0; });
-  Object.values(d.mois || {}).forEach((x) => EP_PARTS.forEach((p) => { if (x[p.k]?.fait) cumul[p.k] += num(x[p.k].montant); }));
+  const env = enveloppesFoyer(s);
+  const cumul = env.tot;
   const om = isOrly ? caisses(s).epargne.solde : null;
   const rs = revenusFixes(s).filter((r) => num(r.data.montant) > 0);
   return (
@@ -594,27 +620,38 @@ function EpargneFoyer({ mk, isOrly }) {
         <div className="kv"><span>Mis de côté prévu</span><b>{money(totalFixe)}</b></div>
         <div className="kv big"><span>Reste libre pour le mois</span><b className={libre < 0 ? 'neg' : 'pos'}>{money(libre)}</b></div>
       </div>
-      <p className="muted small">Cochez quand l'argent est vraiment mis de côté. Les totaux s'additionnent mois après mois.</p>
+      <p className="muted small">Cochez quand l'argent est vraiment mis de côté. Les enveloppes s'additionnent mois après mois. Dans « Loyer », une ligne peut aussi être versée dans une enveloppe (par exemple Construction).</p>
       <div className="caisses">
-        {EP_PARTS.map((p) => <div className="caisse" key={p.k} style={{ '--c': p.color }}><small>Total {p.label}</small><b>{money(cumul[p.k])}</b></div>)}
+        {EP_PARTS.map((p) => (
+          <div className="caisse" key={p.k} style={{ '--c': p.color }}>
+            <small>Enveloppe {p.label}</small><b>{money(cumul[p.k])}</b>
+            <small>{[env.detail[p.k].depart && `départ ${money(env.detail[p.k].depart)}`, env.detail[p.k].salaires && `salaires ${money(env.detail[p.k].salaires)}`, env.detail[p.k].loyer && `loyer ${money(env.detail[p.k].loyer)}`].filter(Boolean).join(' · ') || 'vide pour l’instant'}</small>
+          </div>
+        ))}
         {om !== null && <div className="caisse" style={{ '--c': '#D3145A' }}><small>Épargne OrlyMarket</small><b>{money(om)}</b></div>}
       </div>
       <button className="btn ghost full" onClick={() => setFixOpen(true)}>Modifier les montants</button>
-      {fixOpen && <FixSheet fixes={fixes} base={base} onClose={() => setFixOpen(false)} onSave={(f) => { save({ ...d, fixes: f, mois: d.mois || {} }); toast('Enregistré ✓'); setFixOpen(false); }} />}
+      {fixOpen && <FixSheet fixes={fixes} depart={env.depart} base={base} onClose={() => setFixOpen(false)} onSave={(f, dep) => { save({ ...d, fixes: f, depart: dep, mois: d.mois || {} }); toast('Enregistré ✓'); setFixOpen(false); }} />}
     </>
   );
 }
 
-function FixSheet({ fixes, base, onClose, onSave }) {
+function FixSheet({ fixes, depart, base, onClose, onSave }) {
   const [f, setF] = useState({ ...fixes });
+  const [dep, setDep] = useState({ ...depart });
   const total = EP_PARTS.reduce((x, k) => x + num(f[k.k]), 0);
   return (
-    <Sheet title="Montants à mettre de côté" onClose={onClose} footer={<button className="btn primary full" onClick={() => onSave(Object.fromEntries(EP_PARTS.map((k) => [k.k, num(f[k.k])])))}>Enregistrer</button>}>
-      <p className="muted small">Chaque mois, sur le reste de vos deux salaires ({money(base)}).</p>
+    <Sheet title="Enveloppes du foyer" onClose={onClose} footer={<button className="btn primary full" onClick={() => onSave(Object.fromEntries(EP_PARTS.map((k) => [k.k, num(f[k.k])])), Object.fromEntries(EP_PARTS.map((k) => [k.k, num(dep[k.k])])))}>Enregistrer</button>}>
+      <h3 className="sec-t">À mettre de côté chaque mois</h3>
+      <p className="muted small">Pris sur le reste de vos deux salaires ({money(base)}).</p>
       {EP_PARTS.map((k) => (
         <Field key={k.k} label={k.label} help={k.help}><MoneyInput value={f[k.k]} onChange={(v) => setF({ ...f, [k.k]: v })} /></Field>
       ))}
       <div className={`alert ${total > base ? 'danger' : 'info'}`}>Total {money(total)} · reste libre {money(base - total)}</div>
+      <h3 className="sec-t">Déjà dans chaque enveloppe aujourd'hui</h3>
+      {EP_PARTS.map((k) => (
+        <Field key={k.k} label={k.label}><MoneyInput value={dep[k.k]} onChange={(v) => setDep({ ...dep, [k.k]: v })} /></Field>
+      ))}
     </Sheet>
   );
 }
