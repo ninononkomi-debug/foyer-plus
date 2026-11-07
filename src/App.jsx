@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { LayoutDashboard as Home2, ShoppingBag, House, CalendarCheck, ListChecks, Settings as Cog } from 'lucide-react';
+import { LayoutDashboard as Home2, ShoppingBag, House, CalendarCheck, ClipboardList, Settings as Cog } from 'lucide-react';
 import { App as CapApp } from '@capacitor/app';
 import { supabase } from './lib/supabase.js';
 import { store, useStore } from './lib/store.js';
@@ -16,7 +16,8 @@ import { Locataires } from './screens/Business.jsx';
 import Home from './screens/Home.jsx';
 import Market from './screens/Market.jsx';
 import Agenda from './screens/Agenda.jsx';
-import Affectation from './screens/Affectation.jsx';
+import FoyerV2 from './screens/FoyerV2.jsx';
+import Besoins from './screens/Besoins.jsx';
 import Settings, { usePrefs } from './screens/Settings.jsx';
 import { AuthScreen, NewPasswordScreen } from './screens/Auth.jsx';
 import { LockScreen, PinSetup } from './screens/Lock.jsx';
@@ -139,14 +140,17 @@ function Main({ onLogout }) {
   const [form, setForm] = useState(null);
   const scrollRef = useRef();
 
-  const TABS = { home: 1, market: 1, foyer: 1, agenda: 1, affectation: 1, settings: 1 };
+  const TABS = { home: 1, market: 1, foyer: 1, agenda: 1, besoins: 1, settings: 1 };
   const go = (k) => {
     const [base, arg] = String(k).split(':');
     if (TABS[base]) { setTab(base); setTabArg(arg || null); setSub(null); }
     else {
       // un module du foyer s'ouvre dans l'onglet Foyer (abonnements → Agenda)
       if (base === 'abonnements') { setTab('agenda'); setTabArg('abos'); setSub(null); }
-      else { if (!['settings', 'foyer'].includes(tab)) setTab('foyer'); setSub(base); }
+      else {
+        const map = { dettes: 'dettes', tontines: 'tontines', locataires: 'loyer', epargne: 'epargne' };
+        setTab('foyer'); setTabArg(map[base] || 'budget'); setSub(null);
+      }
     }
     scrollRef.current?.scrollTo(0, 0);
   };
@@ -175,9 +179,9 @@ function Main({ onLogout }) {
   else if (sub && subs[sub]) { const C = subs[sub]; screen = <C {...props} />; }
   else if (tab === 'home') screen = <Home go={go} sections={sections} />;
   else if (tab === 'market' && sections.market) screen = <Market go={go} month={month} setMonth={setMonth} />;
-  else if (tab === 'foyer') screen = <Dashboard {...props} onAdd={() => setForm({})} />;
+  else if (tab === 'foyer') screen = <FoyerV2 key={tabArg || 'budget'} initial={tabArg} isOrly={sections.market} />;
   else if (tab === 'agenda') screen = <Agenda key={tabArg || 'jour'} initial={tabArg} />;
-  else if (tab === 'affectation' && sections.affectation) screen = <Affectation go={go} showMarket={sections.market} />;
+  else if (tab === 'besoins') screen = <Besoins />;
   else if (tab === 'settings') screen = <Settings go={go} onLogout={onLogout} sections={sections} setSections={setSections} />;
   else screen = <Home go={go} sections={sections} />;
 
@@ -194,7 +198,7 @@ function Main({ onLogout }) {
         {sections.market && <T k="market" icon={ShoppingBag} label="Market" />}
         <T k="foyer" icon={House} label="Foyer" />
         <T k="agenda" icon={CalendarCheck} label="Agenda" />
-        {sections.affectation && <T k="affectation" icon={ListChecks} label="Affecter" />}
+        <T k="besoins" icon={ClipboardList} label="Besoins" />
         <span className="spacer" />
         <T k="settings" icon={Cog} label="Réglages" />
       </nav>

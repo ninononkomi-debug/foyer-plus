@@ -5,7 +5,7 @@ export const PARTS = [
   { k: 'relance', label: 'Relance du commerce', short: 'Relance', color: '#D3145A', help: 'Nouveaux stocks, publicité, matériel' },
   { k: 'epargne', label: 'Épargne', short: 'Épargne', color: '#0F8A55', help: 'Mise de côté, à ne pas toucher' },
   { k: 'charges', label: 'Charges', short: 'Charges', color: '#B7700A', help: 'Transport, emballages, crédit internet, frais Mobile Money' },
-  { k: 'moi', label: 'Pour moi', short: 'Pour moi', color: '#2563A8', help: 'À répartir dans « Affectation »' },
+  { k: 'moi', label: 'Pour moi', short: 'Pour moi', color: '#2563A8', help: 'Mes dépenses personnelles' },
 ];
 export const DEFAULT_PCT = { relance: 35, epargne: 25, charges: 25, moi: 15 };
 export const CAPITAL = { k: 'capital', label: 'Capital à racheter', short: 'Capital', color: '#18131A', help: "Prix fournisseur récupéré : il sert à racheter la marchandise" };
@@ -101,24 +101,38 @@ export function encaissements(s) {
   return out.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 }
 
+// Répartition du bénéfice d'une facture : montant de chaque part + case « mis de côté »
+export function repartFacture(s, f, pct = marketParam(s).parts) {
+  const t = factTotals(f);
+  const benef = Math.max(0, t.benef);
+  const r = f.data.repart || {};
+  return PARTS.map((p) => {
+    const done = r[p.k]?.fait;
+    const montant = done ? num(r[p.k].montant) : Math.round((benef * num(pct[p.k])) / 100);
+    return { ...p, pct: pct[p.k], montant, fait: !!done, date: r[p.k]?.date || null };
+  });
+}
+export function toggleRepart(s, f, k) {
+  const parts = repartFacture(s, f);
+  const p = parts.find((x) => x.k === k);
+  const r = { ...(f.data.repart || {}) };
+  if (p.fait) delete r[k];
+  else r[k] = { fait: true, montant: p.montant, date: today() };
+  s.save('facture', { ...f.data, repart: r }, { id: f.id });
+}
+
+// Enveloppes : ce qui a été coché dans les factures, moins ce qui a été utilisé
 export function caisses(s) {
-  const prm = marketParam(s);
-  const pct = prm.parts;
-  const res = { capital: { in: 0, out: 0 } };
-  PARTS.forEach((p) => { res[p.k] = { in: 0, out: 0 }; });
-  for (const e of encaissements(s)) {
-    if (!e.date || e.date < prm.debut) continue;
-    res.capital.in += e.capital;
-    PARTS.forEach((p) => { res[p.k].in += (e.benef * num(pct[p.k])) / 100; });
+  const pct = marketParam(s).parts;
+  const res = {};
+  PARTS.forEach((p) => { res[p.k] = { in: 0, out: 0, aFaire: 0 }; });
+  for (const f of s.list('facture')) {
+    for (const p of repartFacture(s, f, pct)) {
+      if (p.fait) res[p.k].in += p.montant; else res[p.k].aFaire += p.montant;
+    }
   }
-  for (const m of s.list('om_mouvement')) {
-    if (res[m.data.part]) res[m.data.part].out += num(m.data.montant);
-  }
-  // la part « Pour moi » alimente les affectations
-  for (const a of s.list('affectation')) {
-    if (a.data.source === 'om_moi') res.moi.out += num(a.data.montant);
-  }
-  for (const k of Object.keys(res)) { res[k].in = Math.round(res[k].in); res[k].solde = res[k].in - res[k].out; }
+  for (const m of s.list('om_mouvement')) if (res[m.data.part]) res[m.data.part].out += num(m.data.montant);
+  for (const k of Object.keys(res)) res[k].solde = res[k].in - res[k].out;
   return res;
 }
 

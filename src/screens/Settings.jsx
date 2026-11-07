@@ -63,7 +63,6 @@ export default function Settings({ go, onLogout, sections, setSections }) {
       <h3 className="sec-t">Sections affichées</h3>
       <div className="card list">
         <label className="toggle-row item"><span>OrlyMarket<small>Factures, clientes et bénéfice (privé)</small></span><input type="checkbox" className="switch" checked={sections.market} onChange={(e) => setSections({ ...sections, market: e.target.checked })} /></label>
-        <label className="toggle-row item"><span>Affectation<small>Répartir un argent reçu et cocher</small></span><input type="checkbox" className="switch" checked={sections.affectation} onChange={(e) => setSections({ ...sections, affectation: e.target.checked })} /></label>
       </div>
 
       <h3 className="sec-t">Mise à jour</h3>

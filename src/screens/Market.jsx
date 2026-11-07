@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FileText, Users, Wallet, Search, Send, Phone, MessageCircle, Settings2, Trash2, Pencil, Plus, Truck, Receipt, ChevronRight, X } from 'lucide-react';
+import { FileText, Users, Wallet, Search, Send, Phone, MessageCircle, Settings2, Trash2, Pencil, Plus, Truck, Receipt, ChevronRight, X, Check, CheckCircle2 } from 'lucide-react';
 import { useStore } from '../lib/store.js';
 import { money, num, today, dateFr, monthLabel, uid, daysBetween } from '../lib/format.js';
 import {
-  PARTS, CAPITAL, ARTICLE_ST, MODES, marketParam, saveMarketParam, factTotals, STATUT_LABEL, LIV_LABEL,
+  PARTS, ARTICLE_ST, repartFacture, toggleRepart, MODES, marketParam, saveMarketParam, factTotals, STATUT_LABEL, LIV_LABEL,
   nextNumero, clienteName, clienteStats, caisses, marketMonth, migrateOldSales,
 } from '../lib/market.js';
 import { invoiceCanvas, statementCanvas, shareCanvas } from '../lib/docImage.js';
@@ -21,28 +21,27 @@ export default function Market({ go, month, setMonth }) {
   useEffect(() => {
     const n = migrateOldSales(s);
     if (n) toast(`${n} ancienne(s) vente(s) reprise(s) en factures ✓`);
-    if (!prm.raw.debut) saveMarketParam(s, { debut: prm.debut, parts: prm.parts });
   }, [s.lastSyncAt]);
 
   return (
     <div className="screen">
       <ScreenHead title="OrlyMarket" sub="Privé · visible par vous seule"
         right={<button className="icon-btn" onClick={() => setSheet({ k: 'boutique' })} aria-label="Informations de la boutique"><Settings2 size={21} /></button>} />
-      <Segmented value={tab} onChange={setTab} options={[['factures', 'Factures'], ['clientes', 'Clientes'], ['caisses', 'Bénéfice']]} />
+      <Segmented value={tab} onChange={setTab} options={[['factures', 'Factures'], ['clientes', 'Clientes'], ['caisses', 'Enveloppes']]} />
       {tab === 'factures' && <Factures month={month} setMonth={setMonth} open={setSheet} />}
       {tab === 'clientes' && <Clientes open={setSheet} />}
-      {tab === 'caisses' && <Caisses open={setSheet} go={go} month={month} setMonth={setMonth} />}
+      {tab === 'caisses' && <Caisses open={setSheet} />}
 
       {tab !== 'caisses' && <Fab onClick={() => setSheet(tab === 'clientes' ? { k: 'clienteForm' } : { k: 'factForm' })} label={tab === 'clientes' ? 'Nouvelle cliente' : 'Nouvelle facture'} icon={<Plus size={26} />} />}
 
       {sheet?.k === 'factForm' && <FactureForm rec={sheet.rec} clienteId={sheet.cliente} onClose={() => setSheet(null)} onSaved={(f) => setSheet({ k: 'fact', id: f.id })} />}
       {sheet?.k === 'fact' && <FactureDetail id={sheet.id} open={setSheet} onClose={() => setSheet(null)} />}
-      {sheet?.k === 'pay' && <PaiementSheet id={sheet.id} back={() => setSheet({ k: 'fact', id: sheet.id })} />}
+      {sheet?.k === 'pay' && <PaiementSheet id={sheet.id} solde={sheet.solde} back={() => setSheet({ k: 'fact', id: sheet.id })} after={() => setSheet({ k: 'img', kind: 'facture', id: sheet.id, back: { k: 'fact', id: sheet.id }, apresPaiement: true })} />}
       {sheet?.k === 'clienteForm' && <ClienteForm rec={sheet.rec} onClose={() => setSheet(sheet.rec ? { k: 'cliente', id: sheet.rec.id } : null)} />}
       {sheet?.k === 'cliente' && <ClienteDetail id={sheet.id} open={setSheet} onClose={() => setSheet(null)} />}
       {sheet?.k === 'img' && <ImageSheet {...sheet} onClose={() => setSheet(sheet.back || null)} />}
       {sheet?.k === 'boutique' && <BoutiqueSheet onClose={() => setSheet(null)} />}
-      {sheet?.k === 'part' && <PartSheet part={sheet.part} go={go} onClose={() => setSheet(null)} />}
+      {sheet?.k === 'part' && <PartSheet part={sheet.part} onClose={() => setSheet(null)} />}
       {sheet?.k === 'pct' && <PctSheet onClose={() => setSheet(null)} />}
     </div>
   );
@@ -235,10 +234,12 @@ function FactureDetail({ id, open, onClose }) {
       footer={
         <div className="stack">
           <button className="btn primary full wa" onClick={() => open({ k: 'img', kind: 'facture', id: f.id, back: { k: 'fact', id: f.id } })}><FileText size={18} /> Voir la facture et l'envoyer</button>
-          <div className="row gap">
-            {t.reste > 0 && <button className="btn soft grow" onClick={() => open({ k: 'pay', id: f.id })}>+ Paiement reçu</button>}
-            <button className="btn ghost grow" onClick={() => open({ k: 'img', kind: 'point', ids: [f.id], cliente: d.cliente, back: { k: 'fact', id: f.id } })}>Relevé des paiements</button>
-          </div>
+          {t.reste > 0 && (
+            <div className="row gap">
+              <button className="btn soft grow" onClick={() => open({ k: 'pay', id: f.id })}>+ Avance reçue</button>
+              <button className="btn soft grow" onClick={() => open({ k: 'pay', id: f.id, solde: true })}><CheckCircle2 size={17} /> Soldée</button>
+            </div>
+          )}
         </div>
       }>
       <div className="row between">
@@ -264,6 +265,17 @@ function FactureDetail({ id, open, onClose }) {
         <div className="kv big"><span>Reste à payer</span><b>{money(t.reste)}</b></div>
         <div className="kv"><span>Mon bénéfice</span><b className={t.benef >= 0 ? 'pos' : 'neg'}>{money(t.benef)}</b></div>
       </div>
+      <h3 className="sec-t">Répartition du bénéfice ({money(Math.max(0, t.benef))})</h3>
+      <div className="card list">
+        {repartFacture(s, f).map((p) => (
+          <button className="task" key={p.k} onClick={() => toggleRepart(s, f, p.k)}>
+            <span className={`check ${p.fait ? 'on' : ''}`}>{p.fait && <Check size={16} strokeWidth={3} />}</span>
+            <div className="grow item-main"><b className={p.fait ? 'done-t' : ''}>{p.label} · {p.pct} %</b><small>{p.fait ? `Mis de côté le ${dateFr(p.date)}` : 'À mettre de côté'}</small></div>
+            <b style={{ color: p.color }}>{money(p.montant)}</b>
+          </button>
+        ))}
+      </div>
+      {t.reste > 0 && <p className="muted small">Cochez quand vous avez réellement mis l'argent de côté. Le montant va dans l'enveloppe correspondante.</p>}
       <h3 className="sec-t">Versements</h3>
       {(d.paiements || []).length === 0 ? <p className="muted small">Aucun versement pour l'instant.</p> : (
         <div className="card list">
@@ -286,32 +298,43 @@ function FactureDetail({ id, open, onClose }) {
   );
 }
 
-function PaiementSheet({ id, back }) {
+function PaiementSheet({ id, back, after, solde }) {
   const s = useStore();
   const toast = useToast();
   const f = s.getRec(id);
   const t = f ? factTotals(f) : { reste: 0 };
-  const [p, setP] = useState({ montant: t.reste, date: today(), mode: 'especes' });
+  const [mode, setMode] = useState(solde ? 'tout' : 'avance');
+  const [p, setP] = useState({ montant: solde ? t.reste : '', date: today(), mode: 'especes' });
   if (!f) return null;
+  const montant = mode === 'tout' ? t.reste : num(p.montant);
   const save = () => {
-    if (!num(p.montant)) return;
-    s.save('facture', { ...f.data, paiements: [...(f.data.paiements || []), { id: uid(), ...p, montant: num(p.montant) }] }, { id: f.id });
-    toast('Paiement enregistré ✓');
-    back();
+    if (!montant) return toast("Indiquez le montant de l'avance", 'err');
+    s.save('facture', { ...f.data, paiements: [...(f.data.paiements || []), { id: uid(), date: p.date, mode: p.mode, montant }] }, { id: f.id });
+    toast(montant >= t.reste ? 'Facture soldée ✓' : `Avance de ${money(montant)} enregistrée ✓`);
+    after();
   };
   return (
-    <Sheet title={`Paiement · ${f.data.numero}`} onClose={back} footer={<button className="btn primary full" onClick={save}>Enregistrer le paiement</button>}>
-      <p className="muted small">Reste à payer : <b>{money(t.reste)}</b></p>
-      <Field label="Montant reçu"><MoneyInput value={p.montant} onChange={(v) => setP({ ...p, montant: v })} autoFocus /></Field>
+    <Sheet title={`Paiement · ${f.data.numero}`} onClose={back}
+      footer={<button className="btn primary full" onClick={save}>{mode === 'tout' ? 'Marquer la facture soldée' : "Enregistrer l'avance"}</button>}>
+      <div className="totals">
+        <div className="kv"><span>Total de la facture</span><b>{money(t.total)}</b></div>
+        <div className="kv"><span>Déjà versé</span><b className="pos">{money(t.paye)}</b></div>
+        <div className="kv big"><span>Reste à payer</span><b>{money(t.reste)}</b></div>
+      </div>
+      <Segmented value={mode} onChange={setMode} options={[['avance', 'Une avance'], ['tout', 'Tout payé (soldée)']]} />
+      {mode === 'avance'
+        ? <Field label="Montant de l'avance"><MoneyInput value={p.montant} onChange={(v) => setP({ ...p, montant: v })} autoFocus /></Field>
+        : <p className="muted">La cliente règle les <b>{money(t.reste)}</b> restants : la facture sera soldée.</p>}
+      {mode === 'avance' && num(p.montant) > 0 && <p className="muted small">Après cette avance, il restera <b>{money(Math.max(0, t.reste - num(p.montant)))}</b>.</p>}
       <Field label="Date"><input type="date" value={p.date} onChange={(e) => setP({ ...p, date: e.target.value })} /></Field>
       <Field label="Mode de paiement"><div className="chips">{MODES.map(([k, l]) => <button type="button" key={k} className={`chip ${p.mode === k ? 'on' : ''}`} onClick={() => setP({ ...p, mode: k })}>{l}</button>)}</div></Field>
-      <p className="muted small">Le bénéfice de ce paiement est réparti automatiquement dans vos 4 parts.</p>
+      <p className="muted small">Ensuite, la facture à jour s'affiche pour que vous l'envoyiez à la cliente.</p>
     </Sheet>
   );
 }
 
 // ======================= IMAGE =======================
-function ImageSheet({ kind, id, ids, cliente, onClose }) {
+function ImageSheet({ kind, id, ids, cliente, onClose, apresPaiement }) {
   const s = useStore();
   const toast = useToast();
   const [url, setUrl] = useState(null);
@@ -339,6 +362,7 @@ function ImageSheet({ kind, id, ids, cliente, onClose }) {
   return (
     <Sheet title={kind === 'facture' ? 'Aperçu de la facture' : 'Relevé des paiements'} onClose={onClose}
       footer={<button className="btn primary full wa" disabled={!canvas || busy} onClick={send}><Send size={18} /> {busy ? 'Ouverture…' : 'C’est bon, envoyer sur WhatsApp'}</button>}>
+      {apresPaiement && <div className="alert info">Paiement enregistré. Voici la facture à jour : envoyez-la à la cliente.</div>}
       {kind !== 'facture' && <p className="muted small">Le relevé récapitule les factures de la cliente, ce qu'elle a déjà versé et ce qui lui reste à payer.</p>}
       {!prm.boutique.whatsapp && <div className="alert warn">Ajoutez votre numéro WhatsApp et vos numéros Airtel / Moov dans les informations de la boutique (roue en haut d'OrlyMarket).</div>}
       {url ? <img className="preview-img" src={url} alt="Aperçu" /> : <p className="muted center">Préparation de l'image…</p>}
@@ -460,112 +484,111 @@ function ClienteDetail({ id, open, onClose }) {
   );
 }
 
-// ======================= BÉNÉFICE / CAISSES =======================
-function Caisses({ open, go, month, setMonth }) {
+// ======================= ENVELOPPES =======================
+function Caisses({ open }) {
   const s = useStore();
   const prm = marketParam(s);
   const cs = caisses(s);
-  const m = marketMonth(s, month);
-  const totalPct = PARTS.reduce((x, p) => x + num(prm.parts[p.k]), 0);
+  const [filtre, setFiltre] = useState('afaire');
+  const fs = s.list('facture').filter((f) => factTotals(f).benef > 0)
+    .map((f) => ({ f, parts: repartFacture(s, f, prm.parts) }))
+    .filter((x) => filtre === 'tout' || x.parts.some((p) => !p.fait))
+    .sort((a, b) => (b.f.data.date || '').localeCompare(a.f.data.date || ''));
+  const aFaire = PARTS.reduce((x, p) => x + cs[p.k].aFaire, 0);
   return (
     <>
-      <section className="hero small">
-        <p>Bénéfice encaissé depuis le {dateFr(prm.debut)}</p>
-        <h2>{money(PARTS.reduce((x, p) => x + cs[p.k].in, 0))}</h2>
-        <small>Le bénéfice entre dans vos parts au fur et à mesure que les clientes paient.</small>
-      </section>
+      <p className="muted small">Chaque facture a son bénéfice réparti ({PARTS.map((p) => `${prm.parts[p.k]} %`).join(' / ')}). Quand vous cochez une part, son montant entre dans l'enveloppe : vous devez retrouver ce même argent mis de côté.</p>
       <div className="caisses">
         {PARTS.map((p) => (
           <button className="caisse" key={p.k} style={{ '--c': p.color }} onClick={() => open({ k: 'part', part: p.k })}>
             <span className="pc">{prm.parts[p.k]} %</span>
-            <small>{p.label}</small>
+            <small>Enveloppe {p.short}</small>
             <b className={cs[p.k].solde < 0 ? 'neg' : ''}>{money(cs[p.k].solde)}</b>
-            <small>reçu {money(cs[p.k].in)} · utilisé {money(cs[p.k].out)}</small>
+            <small>{cs[p.k].out ? `mis ${money(cs[p.k].in)} · utilisé ${money(cs[p.k].out)}` : `à mettre : ${money(cs[p.k].aFaire)}`}</small>
           </button>
         ))}
-        <button className="caisse wide" style={{ '--c': CAPITAL.color }} onClick={() => open({ k: 'part', part: 'capital' })}>
-          <small>{CAPITAL.label}</small>
-          <b>{money(cs.capital.solde)}</b>
-          <small>{CAPITAL.help}</small>
-        </button>
       </div>
-      {totalPct !== 100 && <div className="alert warn">Le total des pourcentages fait {totalPct} % au lieu de 100 %.</div>}
-      {cs.moi.solde > 0 && (
-        <button className="card card-link" onClick={() => go('affectation')}>
-          <span className="ico blue"><Wallet size={19} /></span>
-          <div className="grow"><b>Répartir « Pour moi » ({money(cs.moi.solde)})</b><p className="muted small">Décidez à quoi sert cet argent dans Affectation.</p></div>
-          <ChevronRight size={18} />
-        </button>
-      )}
-      <MonthNav value={month} onChange={setMonth} />
-      <section className="card">
-        <h3 className="card-t">Le mois en bref</h3>
-        <div className="kv"><span>Ventes facturées</span><b>{money(m.ca)}</b></div>
-        <div className="kv"><span>Bénéfice des ventes</span><b className="pos">{money(m.benef)}</b></div>
-        <div className="kv"><span>Argent encaissé</span><b>{money(m.encaisse)}</b></div>
-        <div className="kv"><span>dont bénéfice à répartir</span><b>{money(m.benefEnc)}</b></div>
-        {PARTS.map((p) => <div className="kv" key={p.k}><span><i className="dot" style={{ background: p.color }} /> {p.label} ({prm.parts[p.k]} %)</span><b>{money((m.benefEnc * num(prm.parts[p.k])) / 100)}</b></div>)}
-      </section>
-      <button className="btn ghost full" onClick={() => open({ k: 'pct' })}>Modifier les pourcentages ou la date de départ</button>
+      {aFaire > 0 && <div className="alert warn">Encore {money(aFaire)} à mettre de côté dans les enveloppes.</div>}
+      <div className="section-chips">
+        {[['afaire', 'À répartir'], ['tout', 'Toutes les factures']].map(([k, l]) => <button key={k} className={`chip ${filtre === k ? 'on' : ''}`} onClick={() => setFiltre(k)}>{l}</button>)}
+      </div>
+      {fs.length === 0 ? <Empty icon={<Wallet size={34} />} title="Tout est réparti" text="Les bénéfices de vos factures sont tous dans les enveloppes." /> : fs.map(({ f, parts }) => {
+        const t = factTotals(f);
+        return (
+          <section className="card" key={f.id}>
+            <button className="card-h" style={{ width: '100%', textAlign: 'left' }} onClick={() => open({ k: 'fact', id: f.id })}>
+              <div><b>{clienteName(s, f)}</b><p className="muted small">{f.data.numero} · {dateFr(f.data.date)} · {STATUT_LABEL[t.statut]}</p></div>
+              <div className="right"><small className="muted">Bénéfice</small><b className="pos">{money(t.benef)}</b></div>
+            </button>
+            <div className="list" style={{ margin: '0 -14px' }}>
+              {parts.map((p) => (
+                <button className="task" key={p.k} onClick={() => toggleRepart(s, f, p.k)}>
+                  <span className={`check ${p.fait ? 'on' : ''}`}>{p.fait && <Check size={16} strokeWidth={3} />}</span>
+                  <div className="grow item-main"><b className={p.fait ? 'done-t' : ''}>{p.label}</b><small>{p.pct} %{p.fait ? ` · fait le ${dateFr(p.date)}` : ''}</small></div>
+                  <b style={{ color: p.color }}>{money(p.montant)}</b>
+                </button>
+              ))}
+            </div>
+          </section>
+        );
+      })}
+      <button className="btn ghost full" onClick={() => open({ k: 'pct' })}>Modifier les pourcentages</button>
     </>
   );
 }
 
-function PartSheet({ part, go, onClose }) {
+function PartSheet({ part, onClose }) {
   const s = useStore();
   const toast = useToast();
-  const info = part === 'capital' ? CAPITAL : PARTS.find((p) => p.k === part);
+  const info = PARTS.find((p) => p.k === part);
   const cs = caisses(s);
-  const [d, setD] = useState({ montant: '', motif: '', date: today(), versEpargne: part === 'epargne' });
+  const [d, setD] = useState({ montant: '', motif: '', date: today() });
   const [del, setDel] = useState(null);
   const hist = s.list('om_mouvement').filter((m) => m.data.part === part).sort((a, b) => b.data.date.localeCompare(a.data.date));
-  const affs = part === 'moi' ? s.list('affectation').filter((a) => a.data.source === 'om_moi') : [];
+  const entrees = [];
+  for (const f of s.list('facture')) for (const p of repartFacture(s, f)) if (p.k === part && p.fait) entrees.push({ f, p });
+  entrees.sort((a, b) => (b.p.date || '').localeCompare(a.p.date || ''));
   const save = () => {
     if (!num(d.montant) || !d.motif.trim()) return toast('Indiquez le montant et le motif', 'err');
-    let lien = null;
-    if (part === 'epargne' && d.versEpargne) lien = s.save('epargne', { date: d.date, montant: num(d.montant), origine: 'OrlyMarket · part épargne' }, { shared: false }).id;
-    s.save('om_mouvement', { part, montant: num(d.montant), motif: d.motif.trim(), date: d.date, lien }, { shared: false });
+    s.save('om_mouvement', { part, montant: num(d.montant), motif: d.motif.trim(), date: d.date }, { shared: false });
     toast('Enregistré ✓');
-    setD({ montant: '', motif: '', date: today(), versEpargne: part === 'epargne' });
+    setD({ montant: '', motif: '', date: today() });
   };
-  const exemples = { relance: ['Achat de stock', 'Publicité Facebook', 'Nouveaux modèles'], charges: ['Transport', 'Emballages', 'Crédit internet', 'Frais Mobile Money'], epargne: ['Versement épargne'], capital: ['Achat fournisseur', 'Commande Chine', 'Commande Dubaï'], moi: ['Retrait personnel'] }[part] || [];
+  const exemples = { relance: ['Achat de stock', 'Publicité', 'Nouveaux modèles'], charges: ['Transport', 'Emballages', 'Crédit internet', 'Frais Mobile Money'], epargne: ['Versement à la banque'], moi: ['Dépense personnelle'] }[part] || [];
   return (
-    <Sheet title={info.label} onClose={onClose}>
+    <Sheet title={`Enveloppe ${info.label}`} onClose={onClose}>
       <div className="hero small" style={{ background: info.color }}>
-        <p>Disponible</p><h2>{money(cs[part].solde)}</h2>
-        <small>Reçu {money(cs[part].in)} · utilisé {money(cs[part].out)}</small>
+        <p>Dans l'enveloppe</p><h2>{money(cs[part].solde)}</h2>
+        <small>Mis de côté {money(cs[part].in)} · utilisé {money(cs[part].out)} · encore à mettre {money(cs[part].aFaire)}</small>
       </div>
       <p className="muted small">{info.help}</p>
-      {part === 'moi' ? (
-        <button className="btn primary full" onClick={() => { onClose(); go('affectation'); }}>Répartir dans Affectation</button>
-      ) : (
-        <section className="card">
-          <h3 className="card-t">Utiliser de l'argent de cette part</h3>
-          <Field label="Montant"><MoneyInput value={d.montant} onChange={(v) => setD({ ...d, montant: v })} /></Field>
-          <Field label="Motif"><input value={d.motif} onChange={(e) => setD({ ...d, motif: e.target.value })} placeholder={exemples[0]} /></Field>
-          <div className="chips">{exemples.map((e) => <button type="button" key={e} className="chip" onClick={() => setD({ ...d, motif: e })}>{e}</button>)}</div>
-          <Field label="Date"><input type="date" value={d.date} onChange={(e) => setD({ ...d, date: e.target.value })} /></Field>
-          {part === 'epargne' && (
-            <label className="toggle-row"><span>Ajouter aussi à mon épargne (Foyer)<small>Le montant apparaît dans Épargne & objectifs</small></span>
-              <input type="checkbox" className="switch" checked={d.versEpargne} onChange={(e) => setD({ ...d, versEpargne: e.target.checked })} /></label>
-          )}
-          <button className="btn primary full" onClick={save}>Enregistrer</button>
-        </section>
-      )}
+      <section className="card">
+        <h3 className="card-t">Je prends de l'argent dans cette enveloppe</h3>
+        <Field label="Montant"><MoneyInput value={d.montant} onChange={(v) => setD({ ...d, montant: v })} /></Field>
+        <Field label="Motif"><input value={d.motif} onChange={(e) => setD({ ...d, motif: e.target.value })} placeholder={exemples[0]} /></Field>
+        <div className="chips">{exemples.map((e) => <button type="button" key={e} className="chip" onClick={() => setD({ ...d, motif: e })}>{e}</button>)}</div>
+        <Field label="Date"><input type="date" value={d.date} onChange={(e) => setD({ ...d, date: e.target.value })} /></Field>
+        <button className="btn primary full" onClick={save}>Enregistrer</button>
+      </section>
       <h3 className="sec-t">Historique</h3>
-      {hist.length + affs.length === 0 ? <p className="muted small">Rien pour l'instant.</p> : (
+      {hist.length + entrees.length === 0 ? <p className="muted small">Rien pour l'instant.</p> : (
         <div className="card list">
-          {affs.map((a) => <div className="item" key={a.id}><div className="grow item-main"><b>{a.data.titre}</b><small>{dateFr(a.data.date)} · Affectation</small></div><b className="neg">- {money(a.data.montant)}</b></div>)}
           {hist.map((m) => (
             <div className="item" key={m.id}>
-              <div className="grow item-main"><b>{m.data.motif}</b><small>{dateFr(m.data.date)}</small></div>
+              <div className="grow item-main"><b>{m.data.motif}</b><small>{dateFr(m.data.date)} · sortie</small></div>
               <b className="neg">- {money(m.data.montant)}</b>
               <button className="icon-btn" onClick={() => setDel(m)} aria-label="Supprimer"><Trash2 size={16} /></button>
             </div>
           ))}
+          {entrees.map(({ f, p }) => (
+            <div className="item" key={f.id}>
+              <div className="grow item-main"><b>{clienteName(s, f)}</b><small>{f.data.numero} · mis de côté le {dateFr(p.date)}</small></div>
+              <b className="pos">+ {money(p.montant)}</b>
+            </div>
+          ))}
         </div>
       )}
-      {del && <Confirm text="Supprimer cette sortie ?" onNo={() => setDel(null)} onYes={() => { if (del.data.lien) s.remove(del.data.lien); s.remove(del.id); setDel(null); }} />}
+      {del && <Confirm text="Supprimer cette sortie ?" onNo={() => setDel(null)} onYes={() => { s.remove(del.id); setDel(null); }} />}
     </Sheet>
   );
 }
@@ -579,16 +602,14 @@ function PctSheet({ onClose }) {
   const total = PARTS.reduce((x, k) => x + num(p[k.k]), 0);
   return (
     <Sheet title="Répartition du bénéfice" onClose={onClose}
-      footer={<button className="btn primary full" disabled={total !== 100} onClick={() => { saveMarketParam(s, { parts: p, debut }); toast('Enregistré ✓'); onClose(); }}>Enregistrer ({total} %)</button>}>
+      footer={<button className="btn primary full" disabled={total !== 100} onClick={() => { saveMarketParam(s, { parts: p }); toast('Enregistré ✓'); onClose(); }}>Enregistrer ({total} %)</button>}>
       {PARTS.map((k) => (
         <Field key={k.k} label={`${k.label} : ${p[k.k]} %`} help={k.help}>
           <input type="range" min="0" max="100" step="5" value={p[k.k]} onChange={(e) => setP({ ...p, [k.k]: Number(e.target.value) })} />
         </Field>
       ))}
       {total !== 100 && <div className="alert warn">Le total doit faire 100 %.</div>}
-      <Field label="Je respecte la répartition à partir du" help="Les paiements reçus avant cette date ne sont pas répartis.">
-        <input type="date" value={debut} onChange={(e) => setDebut(e.target.value)} />
-      </Field>
+      <p className="muted small">Les nouveaux pourcentages s'appliquent aux parts pas encore cochées.</p>
     </Sheet>
   );
 }
