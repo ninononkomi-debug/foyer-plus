@@ -234,10 +234,10 @@ function FactureDetail({ id, open, onClose }) {
     <Sheet title={`Facture ${d.numero}`} onClose={onClose}
       footer={
         <div className="stack">
-          <button className="btn primary full wa" onClick={() => open({ k: 'img', kind: 'facture', id: f.id, back: { k: 'fact', id: f.id } })}><Send size={18} /> Envoyer la facture en image</button>
+          <button className="btn primary full wa" onClick={() => open({ k: 'img', kind: 'facture', id: f.id, back: { k: 'fact', id: f.id } })}><FileText size={18} /> Voir la facture et l'envoyer</button>
           <div className="row gap">
             {t.reste > 0 && <button className="btn soft grow" onClick={() => open({ k: 'pay', id: f.id })}>+ Paiement reçu</button>}
-            <button className="btn ghost grow" onClick={() => open({ k: 'img', kind: 'point', ids: [f.id], cliente: d.cliente, back: { k: 'fact', id: f.id } })}>Point de paiement</button>
+            <button className="btn ghost grow" onClick={() => open({ k: 'img', kind: 'point', ids: [f.id], cliente: d.cliente, back: { k: 'fact', id: f.id } })}>Relevé des paiements</button>
           </div>
         </div>
       }>
@@ -330,18 +330,19 @@ function ImageSheet({ kind, id, ids, cliente, onClose }) {
     p.then((cv) => { if (!alive) return; setCanvas(cv); setUrl(cv.toDataURL('image/png')); }).catch((e) => toast(String(e.message || e), 'err'));
     return () => { alive = false; };
   }, []);
-  const name = kind === 'facture' ? `Facture_${f?.data.numero}.png` : `Point_paiement_${(cl.nom || 'cliente').replace(/\s+/g, '_')}.png`;
-  const text = kind === 'facture' ? `Bonjour ${cl.nom || ''}, voici votre facture ${f?.data.numero}. Merci pour votre confiance ! OrlyMarket` : `Bonjour ${cl.nom || ''}, voici le point de vos paiements. Merci ! OrlyMarket`;
+  const name = kind === 'facture' ? `Facture_${f?.data.numero}.png` : `Releve_paiements_${(cl.nom || 'cliente').replace(/\s+/g, '_')}.png`;
+  const text = kind === 'facture' ? `Bonjour ${cl.nom || ''}, voici votre facture ${f?.data.numero}. Merci pour votre confiance ! OrlyMarket` : `Bonjour ${cl.nom || ''}, voici le relevé de vos paiements. Merci ! OrlyMarket`;
   const send = async () => {
     setBusy(true);
     try { await shareCanvas(canvas, name, text); } catch (e) { if (!/cancel/i.test(String(e?.message))) toast("L'envoi n'a pas abouti", 'err'); } finally { setBusy(false); }
   };
   return (
-    <Sheet title={kind === 'facture' ? 'Facture en image' : 'Point de paiement'} onClose={onClose}
-      footer={<button className="btn primary full wa" disabled={!canvas || busy} onClick={send}><Send size={18} /> {busy ? 'Ouverture…' : 'Envoyer (WhatsApp…)'}</button>}>
+    <Sheet title={kind === 'facture' ? 'Aperçu de la facture' : 'Relevé des paiements'} onClose={onClose}
+      footer={<button className="btn primary full wa" disabled={!canvas || busy} onClick={send}><Send size={18} /> {busy ? 'Ouverture…' : 'C’est bon, envoyer sur WhatsApp'}</button>}>
+      {kind !== 'facture' && <p className="muted small">Le relevé récapitule les factures de la cliente, ce qu'elle a déjà versé et ce qui lui reste à payer.</p>}
       {!prm.boutique.whatsapp && <div className="alert warn">Ajoutez votre numéro WhatsApp et vos numéros Airtel / Moov dans les informations de la boutique (roue en haut d'OrlyMarket).</div>}
       {url ? <img className="preview-img" src={url} alt="Aperçu" /> : <p className="muted center">Préparation de l'image…</p>}
-      <p className="muted small center">Choisissez WhatsApp puis la cliente : l'image part directement dans la discussion.</p>
+      <p className="muted small center">Vérifiez la facture ci-dessus. Pour corriger, fermez cet aperçu et touchez « Modifier ». Sinon, envoyez : choisissez WhatsApp puis la cliente.</p>
     </Sheet>
   );
 }
@@ -427,7 +428,7 @@ function ClienteDetail({ id, open, onClose }) {
     <Sheet title={c.data.nom} onClose={onClose}
       footer={
         <div className="stack">
-          <button className="btn primary full wa" disabled={!st.nb} onClick={() => open({ k: 'img', kind: 'point', ids: pointIds, cliente: id, back: { k: 'cliente', id } })}><Send size={18} /> Envoyer le point de paiement</button>
+          <button className="btn primary full wa" disabled={!st.nb} onClick={() => open({ k: 'img', kind: 'point', ids: pointIds, cliente: id, back: { k: 'cliente', id } })}><Send size={18} /> Envoyer le relevé des paiements</button>
           <button className="btn soft full" onClick={() => open({ k: 'factForm', cliente: id })}><Plus size={17} /> Nouvelle facture pour {c.data.nom}</button>
         </div>
       }>
