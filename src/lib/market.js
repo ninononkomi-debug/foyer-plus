@@ -102,15 +102,18 @@ export function encaissements(s) {
 }
 
 // Répartition du bénéfice d'une facture : montant de chaque part + case « mis de côté »
+// Montants ronds (au millier) : chaque part est arrondie à 1 000 F près ;
+// la part « Relance » prend l'écart pour que le total = bénéfice arrondi.
+export const round1000 = (n) => Math.round(num(n) / 1000) * 1000;
 export function repartFacture(s, f, pct = marketParam(s).parts) {
   const t = factTotals(f);
   const benef = Math.max(0, t.benef);
   const r = f.data.repart || {};
-  return PARTS.map((p) => {
-    const done = r[p.k]?.fait;
-    const montant = done ? num(r[p.k].montant) : Math.round((benef * num(pct[p.k])) / 100);
-    return { ...p, pct: pct[p.k], montant, fait: !!done, date: r[p.k]?.date || null };
-  });
+  const m = {};
+  PARTS.forEach((p) => { m[p.k] = round1000((benef * num(pct[p.k])) / 100); });
+  const autres = PARTS.filter((p) => p.k !== 'relance').reduce((x, p) => x + m[p.k], 0);
+  m.relance = Math.max(0, round1000(benef) - autres);
+  return PARTS.map((p) => ({ ...p, pct: pct[p.k], montant: m[p.k], fait: !!r[p.k]?.fait, date: r[p.k]?.date || null }));
 }
 export function toggleRepart(s, f, k) {
   const parts = repartFacture(s, f);
