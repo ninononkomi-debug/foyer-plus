@@ -3,7 +3,7 @@ import { Check, Plus, Trash2, Pencil, Settings2, Handshake, Users, PiggyBank, Wa
 import { useStore } from '../lib/store.js';
 import { money, num, today, dateFr, monthKey, monthLabel, uid, addMonths } from '../lib/format.js';
 import { ScreenHead, Sheet, Field, MoneyInput, Segmented, MonthNav, Empty, Confirm, useToast, Progress, Fab } from '../components/ui.jsx';
-import { caisses } from '../lib/market.js';
+import { caisses, empruntStats, factTotals, clienteName } from '../lib/market.js';
 
 // =====================================================================
 // Données et calculs
@@ -346,7 +346,7 @@ function Dettes() {
             return (
               <button className="item col" key={d.id} onClick={() => setDetail(d.id)}>
                 <div className="row" style={{ width: '100%' }}>
-                  <div className="grow item-main"><b>{d.data.personne}</b><small>{(d.data.remboursements || []).length} versement{(d.data.remboursements || []).length > 1 ? 's' : ''}{d.data.motif ? ` · ${d.data.motif}` : ''}</small></div>
+                  <div className="grow item-main"><b>{d.data.personne}</b><small>{d.data.source === 'market' ? 'OrlyMarket · ' : ''}{(d.data.remboursements || []).length} versement{(d.data.remboursements || []).length > 1 ? 's' : ''}{d.data.motif && d.data.source !== 'market' ? ` · ${d.data.motif}` : ''}</small></div>
                   <div className="right">{reste ? <b className={tab === 'dette' ? 'neg' : 'pos'}>{money(reste)}</b> : <b className="pos">Soldé ✓</b>}<small>sur {money(d.data.montant)}</small></div>
                 </div>
                 <Progress value={num(d.data.montant) ? verse / num(d.data.montant) : 0} color={reste ? 'var(--violet)' : 'var(--pos)'} />
@@ -406,6 +406,22 @@ function DetteDetail({ id, onEdit, onClose }) {
         <div className="kv"><span>Déjà {moi ? 'rendu' : 'reçu'}</span><b className="pos">{money(num(d.data.montant) - reste)}</b></div>
         <div className="kv big"><span>Reste</span><b>{money(reste)}</b></div>
       </div>
+      {(() => {
+        const st = empruntStats(s, d);
+        if (d.data.source !== 'market' && !st.factures.length) return null;
+        return (
+          <section className="card">
+            <h3 className="card-t">Factures OrlyMarket liées à cet emprunt</h3>
+            {st.factures.length === 0 ? <p className="muted small">Aucune facture rattachée.</p> : st.factures.map((f) => {
+              const t = factTotals(f);
+              return <div className="kv" key={f.id}><span>{f.data.numero} · {clienteName(s, f)} · payé {money(t.paye)}/{money(t.total)}</span><b>{money(t.achat)}</b></div>;
+            })}
+            <div className="kv"><span>Total prix fournisseur</span><b>{money(st.fournisseur)}</b></div>
+            <div className="kv"><span>Bénéfice pour moi</span><b className="pos">{money(st.benef)}</b></div>
+            {st.peutRendre > 0 ? <div className="alert info">Les clientes ont déjà payé de quoi rendre {money(st.peutRendre)}.</div> : st.reste > 0 && <p className="muted small">Les clientes n'ont pas encore assez payé pour rendre davantage.</p>}
+          </section>
+        );
+      })()}
       <h3 className="sec-t">Historique</h3>
       <div className="card list">
         <div className="item"><div className="grow item-main"><b>Montant de départ</b><small>{dateFr(d.data.date)}</small></div><b>{money(d.data.montant)}</b></div>

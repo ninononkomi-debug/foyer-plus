@@ -174,3 +174,24 @@ export function migrateOldSales(s) {
   }
   return old.length;
 }
+
+// ---------- Emprunts pour passer les commandes ----------
+// Un emprunt est une dette « Je dois » (Foyer › Dettes) ; une ou plusieurs factures y sont rattachées.
+export const detteResteM = (d) => Math.max(0, num(d.data.montant) - (d.data.remboursements || []).reduce((x, r) => x + num(r.montant), 0));
+export function empruntsOuverts(s) {
+  return s.list('dette').filter((d) => (d.data.type || 'dette') === 'dette' && (d.data.source === 'market' || detteResteM(d) > 0))
+    .sort((a, b) => (b.data.date || '').localeCompare(a.data.date || ''));
+}
+export function empruntStats(s, d) {
+  const fs = s.list('facture').filter((f) => f.data.emprunt === d.id);
+  let fournisseur = 0, couvert = 0, benef = 0;
+  for (const f of fs) {
+    const t = factTotals(f);
+    fournisseur += t.achat;
+    benef += t.benef;
+    couvert += Math.min(t.paye, t.achat); // ce que les clientes ont déjà payé, dans la limite du prix fournisseur
+  }
+  const rendu = (d.data.remboursements || []).reduce((x, r) => x + num(r.montant), 0);
+  const reste = Math.max(0, num(d.data.montant) - rendu);
+  return { factures: fs, fournisseur, benef, couvert, rendu, reste, peutRendre: Math.max(0, Math.min(reste, couvert - rendu)) };
+}

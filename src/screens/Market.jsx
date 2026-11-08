@@ -3,7 +3,7 @@ import { FileText, Users, Wallet, Search, Send, Phone, MessageCircle, Settings2,
 import { useStore } from '../lib/store.js';
 import { money, num, today, dateFr, monthLabel, uid, daysBetween } from '../lib/format.js';
 import {
-  PARTS, ARTICLE_ST, repartFacture, toggleRepart, MODES, marketParam, saveMarketParam, factTotals, STATUT_LABEL, LIV_LABEL,
+  PARTS, ARTICLE_ST, repartFacture, toggleRepart, empruntsOuverts, empruntStats, detteResteM, MODES, marketParam, saveMarketParam, factTotals, STATUT_LABEL, LIV_LABEL,
   nextNumero, clienteName, clienteStats, caisses, marketMonth, migrateOldSales,
 } from '../lib/market.js';
 import { invoiceCanvas, statementCanvas, shareCanvas } from '../lib/docImage.js';
@@ -104,6 +104,8 @@ function FactureForm({ rec, clienteId, onClose, onSaved }) {
   });
   const [newC, setNewC] = useState({ nom: '', telephone: '' });
   const [acompte, setAcompte] = useState({ montant: '', mode: 'especes' });
+  const [fin, setFin] = useState(() => ({ mode: rec?.data.emprunt ? 'emprunt' : 'moi', emprunt: rec?.data.emprunt || '', personne: '', montant: '', date: today() }));
+  const emprunts = empruntsOuverts(s);
   const [err, setErr] = useState(null);
   const clientes = s.list('cliente').sort((a, b) => a.data.nom.localeCompare(b.data.nom));
   const up = (k, v) => setD((x) => ({ ...x, [k]: v }));
@@ -120,6 +122,16 @@ function FactureForm({ rec, clienteId, onClose, onSaved }) {
     const paiements = [...(d.paiements || [])];
     if (num(acompte.montant) > 0) paiements.push({ id: uid(), date: d.date, montant: num(acompte.montant), mode: acompte.mode });
     const data = { ...d, cliente: cid, lignes: lignes.map((l) => ({ ...l, qte: num(l.qte) || 1, pv: num(l.pv), pa: num(l.pa) })), remise: num(d.remise), remise_type: d.remise_type === 'pct' ? 'pct' : 'montant', livraison: num(d.livraison), frais: num(d.frais), paiements };
+    if (fin.mode === 'emprunt') {
+      let eid = fin.emprunt;
+      if (!eid) {
+        if (!fin.personne.trim() || !num(fin.montant)) return setErr("Indiquez à qui vous avez emprunté et le montant à rendre.");
+        eid = s.save('dette', { type: 'dette', personne: fin.personne.trim(), montant: num(fin.montant), date: fin.date, motif: 'Commande OrlyMarket', source: 'market', remboursements: [] }, { shared: false }).id;
+      }
+      data.emprunt = eid;
+    } else {
+      data.emprunt = null;
+    }
     const saved = s.save('facture', data, { id: rec?.id, shared: false });
     toast(isNew ? 'Facture créée ✓' : 'Facture modifiée ✓');
     onSaved(saved);
@@ -186,6 +198,29 @@ function FactureForm({ rec, clienteId, onClose, onSaved }) {
         <Field label="Livraison facturée" help="Payée par la cliente"><MoneyInput value={d.livraison} onChange={(v) => up('livraison', v)} /></Field>
         <Field label="Mes frais" help="Transport, colis… (non affichés)"><MoneyInput value={d.frais} onChange={(v) => up('frais', v)} /></Field>
       </div>
+      <h3 className="sec-t">Marchandise payée avec</h3>
+      <div className="chips">
+        <button type="button" className={`chip ${fin.mode === 'moi' ? 'on' : ''}`} onClick={() => setFin({ ...fin, mode: 'moi' })}>Mon argent</button>
+        <button type="button" className={`chip ${fin.mode === 'emprunt' ? 'on' : ''}`} onClick={() => setFin({ ...fin, mode: 'emprunt' })}>Un emprunt</button>
+      </div>
+      {fin.mode === 'emprunt' && (
+        <div className="line-edit">
+          <Field label="Quel emprunt ?" help="Un même emprunt peut servir à plusieurs factures.">
+            <select value={fin.emprunt} onChange={(e) => setFin({ ...fin, emprunt: e.target.value })}>
+              <option value="">+ Nouvel emprunt</option>
+              {emprunts.map((e) => <option key={e.id} value={e.id}>{e.data.personne} · {dateFr(e.data.date)} · reste {money(detteResteM(e))}</option>)}
+            </select>
+          </Field>
+          {!fin.emprunt && (
+            <>
+              <Field label="Emprunté à"><input value={fin.personne} onChange={(e) => setFin({ ...fin, personne: e.target.value })} placeholder="Ex. Sandra" /></Field>
+              <Field label="Montant à rendre" help={`Prix fournisseur de cette facture : ${money(t.achat)}. Si l'emprunt couvre plusieurs factures, mettez le total à rendre.`}><MoneyInput value={fin.montant} onChange={(v) => setFin({ ...fin, montant: v })} /></Field>
+              <Field label="Date de l'emprunt"><input type="date" value={fin.date} onChange={(e) => setFin({ ...fin, date: e.target.value })} /></Field>
+            </>
+          )}
+          <p className="muted small">L'emprunt apparaît dans Foyer › Dettes › « Je dois ».</p>
+        </div>
+      )}
       {isNew && (
         <>
           <Field label="Acompte reçu aujourd'hui"><MoneyInput value={acompte.montant} onChange={(v) => setAcompte({ ...acompte, montant: v })} /></Field>
@@ -265,6 +300,7 @@ function FactureDetail({ id, open, onClose }) {
         <div className="kv big"><span>Reste à payer</span><b>{money(t.reste)}</b></div>
         <div className="kv"><span>Mon bénéfice</span><b className={t.benef >= 0 ? 'pos' : 'neg'}>{money(t.benef)}</b></div>
       </div>
+      <EmpruntCard f={f} t={t} />
       <h3 className="sec-t">Répartition du bénéfice ({money(Math.max(0, t.benef))})</h3>
       <div className="card list">
         {repartFacture(s, f).map((p) => (
@@ -295,6 +331,24 @@ function FactureDetail({ id, open, onClose }) {
       {del && <Confirm text={`Supprimer la facture ${d.numero} ?`} onNo={() => setDel(false)} onYes={() => { s.remove(f.id); toast('Facture supprimée'); onClose(); }} />}
       {delPay && <Confirm text={`Supprimer le versement de ${money(delPay.montant)} ?`} onNo={() => setDelPay(null)} onYes={() => { s.save('facture', { ...d, paiements: d.paiements.filter((p) => p.id !== delPay.id) }, { id: f.id }); setDelPay(null); }} />}
     </Sheet>
+  );
+}
+
+function EmpruntCard({ f, t }) {
+  const s = useStore();
+  const e = f.data.emprunt ? s.getRec(f.data.emprunt) : null;
+  if (!e) return <p className="muted small">Marchandise payée avec mon argent · prix fournisseur {money(t.achat)}.</p>;
+  const st = empruntStats(s, e);
+  return (
+    <section className="card">
+      <h3 className="card-t">Emprunt à {e.data.personne}</h3>
+      <div className="kv"><span>Prix fournisseur de cette facture</span><b>{money(t.achat)}</b></div>
+      <div className="kv"><span>Mon bénéfice sur cette facture</span><b className="pos">{money(t.benef)}</b></div>
+      <div className="kv"><span>Emprunt total ({st.factures.length} facture{st.factures.length > 1 ? 's' : ''})</span><b>{money(e.data.montant)}</b></div>
+      <div className="kv"><span>Déjà rendu</span><b className="pos">{money(st.rendu)}</b></div>
+      <div className="kv big"><span>Reste à rendre</span><b className={st.reste ? 'neg' : 'pos'}>{st.reste ? money(st.reste) : 'Tout rendu ✓'}</b></div>
+      {st.peutRendre > 0 && <div className="alert info">Les clientes ont déjà payé de quoi rendre {money(st.peutRendre)} à {e.data.personne}. Enregistrez le remboursement dans Foyer › Dettes.</div>}
+    </section>
   );
 }
 
@@ -497,6 +551,7 @@ function Caisses({ open }) {
   const aFaire = PARTS.reduce((x, p) => x + cs[p.k].aFaire, 0);
   return (
     <>
+      <EmpruntsResume />
       <p className="muted small">Chaque facture a son bénéfice réparti ({PARTS.map((p) => `${prm.parts[p.k]} %`).join(' / ')}). Quand vous cochez une part, son montant entre dans l'enveloppe : vous devez retrouver ce même argent mis de côté.</p>
       <div className="caisses">
         {PARTS.map((p) => (
@@ -534,6 +589,21 @@ function Caisses({ open }) {
       })}
       <button className="btn ghost full" onClick={() => open({ k: 'pct' })}>Modifier les pourcentages</button>
     </>
+  );
+}
+
+function EmpruntsResume() {
+  const s = useStore();
+  const list = empruntsOuverts(s).map((e) => ({ e, st: empruntStats(s, e) })).filter((x) => x.st.reste > 0 && (x.e.data.source === 'market' || x.st.factures.length));
+  if (!list.length) return null;
+  return (
+    <section className="card">
+      <h3 className="card-t">Emprunts à rendre</h3>
+      {list.map(({ e, st }) => (
+        <div className="kv" key={e.id}><span>{e.data.personne} · {st.factures.length} facture{st.factures.length > 1 ? 's' : ''}{st.peutRendre ? ` · rendable ${money(st.peutRendre)}` : ''}</span><b className="neg">{money(st.reste)}</b></div>
+      ))}
+      <p className="muted small">Le prix fournisseur se rend à la personne ; vous gardez le bénéfice. Remboursements à noter dans Foyer › Dettes.</p>
+    </section>
   );
 }
 
