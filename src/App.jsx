@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { LayoutDashboard as Home2, ShoppingBag, House, CalendarCheck, ClipboardList, Settings as Cog } from 'lucide-react';
+import { House as Home2, BarChart3, Bell, User, ChevronLeft } from 'lucide-react';
 import { App as CapApp } from '@capacitor/app';
 import { supabase } from './lib/supabase.js';
 import { store, useStore } from './lib/store.js';
@@ -13,7 +13,9 @@ import Dashboard from './screens/Dashboard.jsx';
 import Operations, { OperationForm } from './screens/Operations.jsx';
 import { Budget, Epargne, Tontines, Patrimoine, Dettes, Portefeuilles } from './screens/Modules.jsx';
 import { Locataires } from './screens/Business.jsx';
-import Home from './screens/Home.jsx';
+import HomeV2 from './screens/HomeV2.jsx';
+import { Journal, Rapports, Notifs, Taches } from './screens/Extras.jsx';
+import { alertes } from './lib/overview.js';
 import Market from './screens/Market.jsx';
 import Agenda from './screens/Agenda.jsx';
 import FoyerV2 from './screens/FoyerV2.jsx';
@@ -132,36 +134,24 @@ function useSections(s) {
 function Main({ onLogout }) {
   const s = useStore();
   const [sections, setSections] = useSections(s);
-  const [tab, setTab] = useState('home');
-  const [tabArg, setTabArg] = useState(null);
-  const [sub, setSub] = useState(null);
+  const [page, setPage] = useState('home');
+  const [arg, setArg] = useState(null);
   const [month, setMonth] = useState(monthKey(today()));
-  const [scope, setScope] = useState('tout');
   const [form, setForm] = useState(null);
   const scrollRef = useRef();
 
-  const TABS = { home: 1, market: 1, foyer: 1, agenda: 1, besoins: 1, settings: 1 };
+  const PAGES = { home: 1, market: 1, foyer: 1, agenda: 1, besoins: 1, journal: 1, rapports: 1, notifs: 1, profil: 1, taches: 1, settings: 1 };
   const go = (k) => {
-    const [base, arg] = String(k).split(':');
-    if (TABS[base]) { setTab(base); setTabArg(arg || null); setSub(null); }
-    else {
-      // un module du foyer s'ouvre dans l'onglet Foyer (abonnements → Agenda)
-      if (base === 'abonnements') { setTab('agenda'); setTabArg('abos'); setSub(null); }
-      else {
-        const map = { dettes: 'dettes', tontines: 'tontines', locataires: 'loyer', epargne: 'epargne' };
-        setTab('foyer'); setTabArg(map[base] || 'budget'); setSub(null);
-      }
-    }
+    let [base, a] = String(k).split(':');
+    if (base === 'settings') base = 'profil';
+    if (base === 'abonnements') { base = 'agenda'; a = 'abos'; }
+    if (!PAGES[base]) { const map = { dettes: 'dettes', tontines: 'tontines', locataires: 'loyer', epargne: 'epargne' }; a = map[base] || 'budget'; base = 'foyer'; }
+    if (base === 'market' && !sections.market) base = 'home';
+    setPage(base); setArg(a || null);
     scrollRef.current?.scrollTo(0, 0);
   };
-  const back = () => { setSub(null); scrollRef.current?.scrollTo(0, 0); };
-  window.__appBack = () => {
-    if (sub) { back(); return true; }
-    if (tab !== 'home') { setTab('home'); return true; }
-    return false;
-  };
-  useEffect(() => { scrollRef.current?.scrollTo(0, 0); }, [tab]);
-  // première ouverture d'Orly : autoriser notifications + alarmes exactes (tâches à l'heure pile)
+  window.__appBack = () => { if (page !== 'home') { setPage('home'); return true; } return false; };
+  useEffect(() => { scrollRef.current?.scrollTo(0, 0); }, [page, arg]);
   useEffect(() => {
     if (!isNative || localStorage.getItem('orly:notifAsked')) return;
     localStorage.setItem('orly:notifAsked', '1');
@@ -169,40 +159,39 @@ function Main({ onLogout }) {
   }, []);
   if (!s.ready) return <Splash />;
 
-  const props = { go, back, month, setMonth, scope, setScope };
-  const subs = {
-    budget: Budget, epargne: Epargne, tontines: Tontines, patrimoine: Patrimoine,
-    dettes: Dettes, portefeuilles: Portefeuilles, locataires: Locataires,
-  };
+  const nbAlert = alertes(s, sections).length;
   let screen;
-  if (sub === 'ops') screen = <Operations {...props} openForm={(rec) => setForm({ rec })} />;
-  else if (sub && subs[sub]) { const C = subs[sub]; screen = <C {...props} />; }
-  else if (tab === 'home') screen = <Home go={go} sections={sections} />;
-  else if (tab === 'market' && sections.market) screen = <Market go={go} month={month} setMonth={setMonth} />;
-  else if (tab === 'foyer') screen = <FoyerV2 key={tabArg || 'budget'} initial={tabArg} isOrly={sections.market} />;
-  else if (tab === 'agenda') screen = <Agenda key={tabArg || 'jour'} initial={tabArg} />;
-  else if (tab === 'besoins') screen = <Besoins />;
-  else if (tab === 'settings') screen = <Settings go={go} onLogout={onLogout} sections={sections} setSections={setSections} />;
-  else screen = <Home go={go} sections={sections} />;
+  if (page === 'market') screen = <Market key={arg || 'f'} go={go} month={month} setMonth={setMonth} initial={arg} />;
+  else if (page === 'foyer') screen = <FoyerV2 key={arg || 'budget'} initial={arg} isOrly={sections.market} />;
+  else if (page === 'agenda') screen = <Agenda key={arg || 'jour'} initial={arg} />;
+  else if (page === 'besoins') screen = <Besoins />;
+  else if (page === 'journal') screen = <Journal sections={sections} onAdd={() => setForm({})} />;
+  else if (page === 'rapports') screen = <Rapports sections={sections} />;
+  else if (page === 'notifs') screen = <Notifs go={go} sections={sections} />;
+  else if (page === 'taches') screen = <Taches go={go} />;
+  else if (page === 'profil') screen = <Settings go={go} onLogout={onLogout} sections={sections} setSections={setSections} />;
+  else screen = <HomeV2 go={go} sections={sections} />;
 
-  const T = ({ k, icon: I, label }) => (
-    <button className={`tab ${tab === k ? 'on' : ''}`} onClick={() => go(k)} aria-label={label} aria-current={tab === k ? 'page' : undefined}>
-      <I size={22} /><span>{label}</span>
-    </button>
-  );
+  const NAV = [['home', Home2, 'Accueil'], ['rapports', BarChart3, 'Rapports'], ['notifs', Bell, 'Notifications'], ['profil', User, 'Profil']];
+  const isMain = NAV.some((n) => n[0] === page);
   return (
-    <div className="shell">
-      <nav className="rail" aria-label="Sections">
-        <span className="rail-brand" aria-hidden="true">O</span>
-        <T k="home" icon={Home2} label="Accueil" />
-        {sections.market && <T k="market" icon={ShoppingBag} label="Market" />}
-        <T k="foyer" icon={House} label="Foyer" />
-        <T k="agenda" icon={CalendarCheck} label="Agenda" />
-        <T k="besoins" icon={ClipboardList} label="Besoins" />
-        <span className="spacer" />
-        <T k="settings" icon={Cog} label="Réglages" />
+    <div className="shell2">
+      <div className="waves" aria-hidden="true">
+        <svg className="wave-top" viewBox="0 0 400 120" preserveAspectRatio="none"><path d="M180 0 C 260 40, 330 10, 400 60 L400 0 Z" fill="url(#wg1)" /><path d="M210 0 C 280 34, 340 6, 400 44" fill="none" stroke="#E8B04A" strokeWidth="2.5" /><defs><linearGradient id="wg1" x1="0" x2="1"><stop offset="0" stopColor="#B04FE0" /><stop offset="1" stopColor="#6A1FB0" /></linearGradient></defs></svg>
+        <svg className="wave-bottom" viewBox="0 0 400 120" preserveAspectRatio="none"><path d="M0 120 L0 50 C 80 90, 140 70, 220 120 Z" fill="url(#wg2)" /><path d="M0 64 C 80 100, 150 82, 230 120" fill="none" stroke="#E8B04A" strokeWidth="2.5" /><defs><linearGradient id="wg2" x1="0" x2="1"><stop offset="0" stopColor="#6A1FB0" /><stop offset="1" stopColor="#C04BD8" /></linearGradient></defs></svg>
+      </div>
+      <main className="content2" ref={scrollRef}>
+        {!isMain && <button className="back-home" onClick={() => go('home')}><ChevronLeft size={18} /> Accueil</button>}
+        {screen}
+      </main>
+      <nav className="botnav" aria-label="Navigation">
+        {NAV.map(([k, I, l]) => (
+          <button key={k} className={page === k ? 'on' : ''} onClick={() => go(k)} aria-current={page === k ? 'page' : undefined}>
+            <span className="bn-ico"><I size={24} />{k === 'notifs' && nbAlert > 0 && <i className="h2-badge">{nbAlert}</i>}</span>
+            <span>{l}</span>
+          </button>
+        ))}
       </nav>
-      <main className="content" ref={scrollRef}>{screen}</main>
       {form && <OperationForm rec={form.rec} onClose={() => setForm(null)} />}
     </div>
   );

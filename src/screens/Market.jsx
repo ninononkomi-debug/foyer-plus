@@ -11,10 +11,10 @@ import { ScreenHead, Fab, Sheet, Field, MoneyInput, Segmented, Empty, Confirm, u
 
 const STC = { paid: 'paid', part: 'part', unpaid: 'unpaid' };
 
-export default function Market({ go, month, setMonth }) {
+export default function Market({ go, month, setMonth, initial }) {
   const s = useStore();
   const toast = useToast();
-  const [tab, setTab] = useState('factures');
+  const [tab, setTab] = useState(initial || 'factures');
   const [sheet, setSheet] = useState(null);
   const prm = marketParam(s);
 
