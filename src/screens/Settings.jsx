@@ -168,6 +168,14 @@ function FoyerSheet({ onClose }) {
               </div>
             ))}
           </div>
+          {members.length <= 1 && (
+            <section className="card" style={{ borderColor: '#F59E0B' }}>
+              <h3 className="card-t">Vous êtes seul(e) dans ce foyer</h3>
+              <p className="muted small">Si votre conjoint a déjà un foyer, entrez <b>son</b> code ici : vous le rejoignez, et ce que vous avez déjà saisi y est transféré.</p>
+              <Field label="Code d'invitation de mon conjoint"><input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="Ex. 7F3A9C21" autoCapitalize="characters" /></Field>
+              <button className="btn primary full" disabled={busy || code.length < 6 || code === h.invite_code} onClick={() => run(() => s.joinHousehold(code), 'Foyer de votre conjoint rejoint ✓')}>Rejoindre le foyer de mon conjoint</button>
+            </section>
+          )}
           <button className="btn ghost full" disabled={busy} onClick={() => run(() => s.renewCode(), 'Nouveau code généré ✓')}>Générer un nouveau code</button>
           <button className="btn ghost danger-t full" onClick={() => setLeave(true)}>Quitter le foyer</button>
           {leave && <Confirm text="Quitter le foyer ? Vous ne verrez plus les données communes." yes="Quitter" onNo={() => setLeave(false)} onYes={() => { setLeave(false); run(() => s.leaveHousehold(), 'Vous avez quitté le foyer'); }} />}

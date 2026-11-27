@@ -95,7 +95,7 @@ class Store {
   save(module, data, opts = {}) {
     const now = new Date().toISOString();
     const existing = opts.id ? this.records.get(opts.id) : null;
-    const household_id = opts.shared === undefined
+    const household_id = opts.householdId !== undefined ? opts.householdId : opts.shared === undefined
       ? (existing ? existing.household_id : null)
       : (opts.shared ? this.householdId : null);
     data = { ...data, _by: this.user.id };
@@ -147,8 +147,9 @@ class Store {
     this.syncing = true;
     this.emit();
     try {
-      // 1. Envoi des modifications locales
-      if (this.outbox.size) {
+      // 1. Envoi des modifications locales (un échec n'empêche pas la réception)
+      let pushError = null;
+      if (this.outbox.size) try {
         const batch = [];
         for (let rec of [...this.outbox.values()]) {
           if (rec.data && rec.data._photo_pending && !rec.deleted) rec = await this.uploadPhoto(rec);
@@ -160,6 +161,16 @@ class Store {
           const { error } = await supabase.from('records').upsert(chunk, { onConflict: 'id' });
           if (error) throw error;
           chunk.forEach((r) => { if (this.outbox.get(r.id)?.updated_at === r.updated_at) this.outbox.delete(r.id); });
+        }
+      } catch (e) {
+        pushError = e;
+        // on réessaie ligne par ligne ; une ligne refusée par le serveur est abandonnée pour ne plus tout bloquer
+        for (const rec of [...this.outbox.values()]) {
+          const { server_updated_at, ...row } = rec; // eslint-disable-line no-unused-vars
+          const { error } = await supabase.from('records').upsert([row], { onConflict: 'id' });
+          if (!error) { this.outbox.delete(rec.id); continue; }
+          rec._fails = (rec._fails || 0) + 1;
+          if (rec._fails >= 3 || String(error.code) === '42501') { console.warn('abandon', rec.module, error.message); this.outbox.delete(rec.id); this.lastPull = EPOCH; }
         }
       }
       // 2. Foyer, membres, profils
@@ -194,7 +205,7 @@ class Store {
       // enregistrements d'un foyer quitté
       const myHh = new Set(this.households.map((h) => h.id));
       for (const [id, r] of this.records) if (r.household_id && !myHh.has(r.household_id) && r.owner_id !== this.user.id) this.records.delete(id);
-      this.syncError = null;
+      this.syncError = pushError && this.outbox.size ? (pushError.message || String(pushError)) : null;
       this.lastSyncAt = new Date();
       if (fromPartner.length && this.onPartnerChange) { try { this.onPartnerChange(fromPartner); } catch (e) { /* */ } }
       this.persist();
@@ -241,11 +252,44 @@ class Store {
     return data;
   }
   async joinHousehold(code) {
+    const oldId = this.householdId;
     const { data, error } = await supabase.rpc('join_household', { p_code: code });
     if (error) throw error;
+    const newId = data?.id;
     this.lastPull = EPOCH;
     await this.sync();
+    if (oldId && newId && oldId !== newId) {
+      await this.moveToHousehold(oldId, newId);
+      await supabase.rpc('leave_household', { p_id: oldId });
+      this.lastPull = EPOCH;
+      await this.sync();
+    }
     return data;
+  }
+  // Transfère mes saisies d'un foyer créé par erreur vers le foyer du conjoint
+  async moveToHousehold(oldId, newId) {
+    const me = this.user.id;
+    const mineOld = [...this.records.values()].filter((r) => !r.deleted && r.household_id === oldId && r.owner_id === me);
+    const inNew = (m) => [...this.records.values()].filter((r) => !r.deleted && r.household_id === newId && r.module === m);
+    const singles = ['revenu_fixe', 'loyer_cfg', 'epargne_foyer'];
+    // correspondance des revenus et des charges (par titulaire et par nom)
+    const mapRev = {}, mapCharge = {};
+    for (const r of mineOld.filter((x) => x.module === 'revenu_fixe')) {
+      const t = inNew('revenu_fixe').find((x) => x.data.titulaire === r.data.titulaire) || inNew('revenu_fixe').find((x) => x.data.nom === r.data.nom);
+      if (!t) continue;
+      mapRev[r.id] = t.id;
+      for (const c of r.data.charges || []) {
+        const tc = (t.data.charges || []).find((y) => (y.nom || '').toLowerCase() === (c.nom || '').toLowerCase());
+        if (tc) mapCharge[c.id] = tc.id;
+      }
+    }
+    for (const r of mineOld) {
+      if (singles.includes(r.module) && inNew(r.module).length) { this.remove(r.id); continue; }
+      let data = r.data;
+      if (r.module === 'depense_charge') data = { ...data, revenu: mapRev[data.revenu] || data.revenu, charge: mapCharge[data.charge] || data.charge };
+      this.save(r.module, data, { id: r.id, householdId: newId });
+    }
+    await this.sync();
   }
   async leaveHousehold() {
     const id = this.householdId;

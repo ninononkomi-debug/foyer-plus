@@ -114,7 +114,8 @@ export default function FoyerV2({ initial, isOrly }) {
   }, [s.ready, s.lastSyncAt]);
   return (
     <div className="screen">
-      <ScreenHead title="Foyer" sub={s.household ? s.household.name : 'Revenus, loyer, dettes, tontines, épargne'} />
+      <ScreenHead title="Foyer" sub={s.household ? `${s.household.name} · ${s.members.filter((m) => m.household_id === s.householdId).length} membre(s)` : 'Revenus, loyer, dettes, tontines, épargne'} />
+      <SyncLine />
       <div className="section-chips">
         {SECTIONS.map(([k, l]) => <button key={k} className={`chip ${sec === k ? 'on' : ''}`} onClick={() => setSec(k)}>{l}</button>)}
       </div>
@@ -159,6 +160,19 @@ function Budget({ mk }) {
       {dep && <DepenseSheet mk={mk} preset={dep} onClose={() => setDep(null)} />}
       {detail && <ChargeDetail mk={mk} r={detail.r} c={detail.c} onClose={() => setDetail(null)} onEdit={() => { setEdit(detail); setDetail(null); }} onDep={() => { setDep({ r: detail.r.id, c: detail.c.id }); setDetail(null); }} />}
     </>
+  );
+}
+
+function SyncLine() {
+  const s = useStore();
+  const n = s.members.filter((m) => m.household_id === s.householdId).length;
+  const t = s.lastSyncAt ? new Date(s.lastSyncAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : null;
+  return (
+    <div className={`syncline ${s.syncError ? 'err' : ''}`}>
+      <span>{s.syncing ? '🔄 Mise à jour…' : s.syncError ? `⚠️ Pas synchronisé : ${s.syncError}` : t ? `✅ À jour (${t})` : '…'}</span>
+      <button onClick={() => s.sync()}>Actualiser</button>
+      {s.household && n <= 1 && <small>⚠️ Vous êtes seul(e) dans ce foyer : votre conjoint ne voit pas vos saisies. Voir Profil › Mon foyer.</small>}
+    </div>
   );
 }
 
