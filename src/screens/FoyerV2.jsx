@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Check, Plus, Trash2, Pencil, Settings2, Handshake, Users, PiggyBank, Wallet, KeyRound, CheckCircle2 } from 'lucide-react';
 import { useStore } from '../lib/store.js';
 import { money, num, today, dateFr, monthKey, monthLabel, uid, addMonths } from '../lib/format.js';
-import { ScreenHead, Sheet, Field, PhotoInput, MoneyInput, Segmented, MonthNav, Empty, Confirm, useToast, Progress, Fab } from '../components/ui.jsx';
+import { ScreenHead, Sheet, Field, MoneyInput, Segmented, MonthNav, Empty, Confirm, useToast, Progress, Fab } from '../components/ui.jsx';
 import { caisses, empruntStats, factTotals, clienteName } from '../lib/market.js';
 
 // =====================================================================
@@ -209,21 +209,15 @@ function RecuSheet({ r, mk, onClose }) {
   );
 }
 
-// Justificatif obligatoire : une photo (reçu, capture) ou une explication écrite
+// Justificatif obligatoire : une explication écrite (pas de photo)
 function JustifFields({ d, up }) {
   return (
-    <>
-      <Field label="Justificatif (obligatoire)" help="Sans justificatif, la dépense ne peut pas être validée.">
-        <textarea rows={2} value={d.justif || ''} onChange={(e) => up('justif', e.target.value)} placeholder="Ex. Vidange chez Total Oloumi, facture n° 254" />
-      </Field>
-      <PhotoInput value={d.photo} pending={d._photo_pending} onChange={(x) => {
-        if (x.pending) up('_photo_pending', x.pending);
-        if (x.remove) { up('_photo_pending', undefined); up('photo', undefined); }
-      }} />
-    </>
+    <Field label="Justificatif (obligatoire)" help="Expliquez par écrit à quoi a servi l'argent. Sans justificatif, la dépense ne peut pas être validée.">
+      <textarea rows={2} value={d.justif || ''} onChange={(e) => up('justif', e.target.value)} placeholder="Ex. On a pris 10 000 F pour acheter le carburant à Total Oloumi" />
+    </Field>
   );
 }
-const hasJustif = (d) => (d.justif || '').trim().length >= 3 || d.photo || d._photo_pending;
+const hasJustif = (d) => (d.justif || '').trim().length >= 3;
 
 function DepenseSheet({ mk, preset, rec, onClose }) {
   const s = useStore();
@@ -285,7 +279,7 @@ function ChargeDetail({ mk, r, c, onClose, onEdit, onDep }) {
         <div className="card list">
           {list.map((x) => (
             <button className="item" key={x.id} onClick={() => setEdit(x)}>
-              <div className="grow item-main"><b>{x.data.motif}</b><small>{dateFr(x.data.date)} · {x.data.photo || x.data._photo_pending ? '📎 ' : ''}{x.data.justif || 'justificatif en photo'}{x.data._by && s.profiles[x.data._by] ? ` · ${s.profiles[x.data._by].display_name}` : ''}</small></div>
+              <div className="grow item-main"><b>{x.data.motif}</b><small>{dateFr(x.data.date)} · {x.data.justif || ''}{x.data._by && s.profiles[x.data._by] ? ` · ${s.profiles[x.data._by].display_name}` : ''}</small></div>
               <b className="neg">- {money(x.data.montant)}</b>
             </button>
           ))}
@@ -832,7 +826,7 @@ function Imprevus({ mk }) {
         <div className="card list">
           {list.map((x) => (
             <button className="item" key={x.id} onClick={() => setForm(x)}>
-              <div className="grow item-main"><b>{x.data.motif}</b><small>{dateFr(x.data.date)} · {IMP_ENVS.find((e) => e[0] === x.data.env)?.[1] || 'Imprévus'} · {x.data.photo || x.data._photo_pending ? '📎 ' : ''}{x.data.justif || ''}{x.data._by && s.profiles[x.data._by] ? ` · ${s.profiles[x.data._by].display_name}` : ''}</small></div>
+              <div className="grow item-main"><b>{x.data.motif}</b><small>{dateFr(x.data.date)} · {IMP_ENVS.find((e) => e[0] === x.data.env)?.[1] || 'Imprévus'} · {x.data.justif || ''}{x.data._by && s.profiles[x.data._by] ? ` · ${s.profiles[x.data._by].display_name}` : ''}</small></div>
               <b className="neg">- {money(x.data.montant)}</b>
             </button>
           ))}

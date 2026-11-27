@@ -20,7 +20,7 @@ export async function checkUpdate(force = false) {
   if (!GH_REPO || !isNative) return null;
   try {
     const last = Number(localStorage.getItem('fp:updcheck') || 0);
-    if (!force && Date.now() - last < 3 * 3600e3) {
+    if (!force && Date.now() - last < 20 * 60e3) {
       const cached = localStorage.getItem('fp:updver') || '';
       return cached && cmp(cached, APP_VERSION) > 0 ? cached : null;
     }

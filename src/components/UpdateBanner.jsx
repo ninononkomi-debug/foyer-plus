@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { App as CapApp } from '@capacitor/app';
 import { Download } from 'lucide-react';
 import { checkUpdate, installUpdate } from '../lib/update.js';
 import { useToast } from './ui.jsx';
@@ -8,7 +9,14 @@ export default function UpdateBanner({ force }) {
   const [v, setV] = useState(null);
   const [pct, setPct] = useState(null);
   const [step, setStep] = useState('');
-  useEffect(() => { checkUpdate(force).then(setV); }, [force]);
+  useEffect(() => {
+    checkUpdate(force).then(setV);
+    // revérifie à chaque retour dans l'application et toutes les 30 minutes
+    let h;
+    try { CapApp.addListener('resume', () => checkUpdate(true).then(setV)).then((x) => { h = x; }); } catch (e) { /* */ }
+    const t = setInterval(() => checkUpdate(true).then(setV), 30 * 60e3);
+    return () => { clearInterval(t); try { h?.remove(); } catch (e) { /* */ } };
+  }, [force]);
   if (!v) return null;
   const go = async () => {
     setPct(0); setStep('');
