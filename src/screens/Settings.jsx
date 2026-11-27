@@ -244,9 +244,8 @@ function NotifSheet({ onClose }) {
   const items = [
     ['taches', 'Tâches de la journée', "À l'heure prévue, et un résumé chaque matin"],
     ['abonnements', 'Abonnements', '7 jours avant, 2 jours avant et le jour même'],
-    ['daily', 'Rappel de saisie quotidien', 'Pour ne rien oublier le soir'],
+    ['loyers', 'Loyer', 'Le 5 et le 10 si le loyer n’est pas noté'],
     ['budget', 'Budget dépassé', 'Quand une catégorie dépasse son plafond'],
-    ['loyers', 'Loyers', 'Loyer attendu ou en retard'],
     ['dettes', 'Dettes et créances', "La veille et le jour de l'échéance"],
     ['tontine', 'Tontine', 'La veille de la cotisation et de votre tour'],
   ];

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Check, Plus, Trash2, Pencil, Settings2, Handshake, Users, PiggyBank, Wallet, KeyRound, CheckCircle2 } from 'lucide-react';
 import { useStore } from '../lib/store.js';
 import { money, num, today, dateFr, monthKey, monthLabel, uid, addMonths } from '../lib/format.js';
-import { ScreenHead, Sheet, Field, MoneyInput, Segmented, MonthNav, Empty, Confirm, useToast, Progress, Fab } from '../components/ui.jsx';
+import { ScreenHead, Sheet, Field, PhotoInput, MoneyInput, Segmented, MonthNav, Empty, Confirm, useToast, Progress, Fab } from '../components/ui.jsx';
 import { caisses, empruntStats, factTotals, clienteName } from '../lib/market.js';
 
 // =====================================================================
@@ -13,22 +13,34 @@ export const TITULAIRES = [['moi', 'Moi'], ['monsieur', 'Monsieur']];
 export function revenusFixes(s) {
   return s.list('revenu_fixe').sort((a, b) => (a.data.ordre || 0) - (b.data.ordre || 0));
 }
+// Montant réellement reçu ce mois (le salaire bouge un peu chaque mois)
+export const recuMois = (r, mk) => num(((r.data.recus || {})[mk]) ?? r.data.montant);
+export const depensesCharges = (s, mk) => s.list('depense_charge').filter((d) => d.data.mois === mk);
+export const imprevusMois = (s, mk) => s.list('imprevu').filter((d) => d.data.mois === mk);
+export function chargeDepense(s, mk, rid, cid) {
+  return depensesCharges(s, mk).filter((d) => d.data.revenu === rid && d.data.charge === cid).reduce((x, d) => x + num(d.data.montant), 0);
+}
 export function budgetMois(s, mk) {
   const rs = revenusFixes(s);
-  let revenus = 0, charges = 0, faites = 0, nb = 0, montantFait = 0;
+  let revenus = 0, charges = 0, faites = 0, nb = 0, montantFait = 0, depense = 0, aMettre = 0;
   const aRenseigner = [];
+  const deps = depensesCharges(s, mk);
   for (const r of rs) {
-    const ok = num(r.data.montant) > 0;
-    if (ok) revenus += num(r.data.montant); else aRenseigner.push(r);
+    const recu = recuMois(r, mk);
+    const ok = recu > 0;
+    if (ok) revenus += recu; else aRenseigner.push(r);
     const f = (r.data.faits || {})[mk] || {};
     for (const c of r.data.charges || []) {
       if (ok) charges += num(c.montant);
       nb++;
-      if (f[c.id]) { faites++; montantFait += num(c.montant); }
+      const dep = deps.filter((d) => d.data.revenu === r.id && d.data.charge === c.id).reduce((x, d) => x + num(d.data.montant), 0);
+      depense += dep;
+      if (f[c.id]) { faites++; montantFait += num(c.montant); } else aMettre += Math.max(0, num(c.montant) - dep);
     }
   }
+  const imprevus = imprevusMois(s, mk).reduce((x, d) => x + num(d.data.montant), 0);
   // un revenu sans montant n'entre pas dans le calcul (sinon le foyer paraît « dans le rouge » à tort)
-  return { revenus, charges, reste: revenus - charges, faites, nb, montantFait, aRenseigner };
+  return { revenus, charges, reste: revenus - charges, faites, nb, montantFait, aRenseigner, depense, aMettre, imprevus };
 }
 
 // Premier lancement : les revenus et charges donnés par Orly
@@ -59,7 +71,7 @@ const detteReste = (d) => Math.max(0, num(d.data.montant) - (d.data.remboursemen
 // =====================================================================
 // Écran Foyer
 // =====================================================================
-const SECTIONS = [['budget', 'Revenus & charges'], ['loyer', 'Loyer'], ['dettes', 'Dettes'], ['tontines', 'Tontines'], ['epargne', 'Épargne']];
+const SECTIONS = [['budget', 'Revenus & charges'], ['imprevus', 'Imprévus'], ['loyer', 'Loyer'], ['dettes', 'Dettes'], ['tontines', 'Tontines'], ['epargne', 'Épargne']];
 
 export default function FoyerV2({ initial, isOrly }) {
   const s = useStore();
@@ -78,8 +90,9 @@ export default function FoyerV2({ initial, isOrly }) {
       <div className="section-chips">
         {SECTIONS.map(([k, l]) => <button key={k} className={`chip ${sec === k ? 'on' : ''}`} onClick={() => setSec(k)}>{l}</button>)}
       </div>
-      {['budget', 'loyer', 'epargne'].includes(sec) && <MonthNav value={month} onChange={setMonth} />}
+      {['budget', 'loyer', 'epargne', 'imprevus'].includes(sec) && <MonthNav value={month} onChange={setMonth} />}
       {sec === 'budget' && <Budget mk={month} />}
+      {sec === 'imprevus' && <Imprevus mk={month} />}
       {sec === 'loyer' && <Loyer mk={month} />}
       {sec === 'dettes' && <Dettes />}
       {sec === 'tontines' && <Tontines />}
@@ -95,38 +108,44 @@ function Budget({ mk }) {
   const s = useStore();
   const [edit, setEdit] = useState(null);
   const [newRev, setNewRev] = useState(false);
+  const [dep, setDep] = useState(null);
+  const [detail, setDetail] = useState(null);
   const rs = revenusFixes(s);
   const b = budgetMois(s, mk);
   return (
     <>
       <section className={`hero small ${b.reste < 0 ? 'danger' : ''}`} style={b.reste < 0 ? { background: 'linear-gradient(135deg,#9F1239,#E11D48)' } : undefined}>
-        <p>{monthLabel(mk)} · revenus − charges</p>
+        <p>{monthLabel(mk)} · entrées − charges</p>
         <h2>{b.reste >= 0 ? '+' : ''}{money(b.reste)}</h2>
-        <small>{b.reste < 0 ? '⚠️ Vous êtes dans le rouge' : 'Vous êtes dans le vert'} · revenus {money(b.revenus)} · charges {money(b.charges)}</small>
+        <small>{b.reste < 0 ? '⚠️ Vous êtes dans le rouge' : 'Vous êtes dans le vert'} · entrées {money(b.revenus)} · charges {money(b.charges)}</small>
       </section>
-      <section className="card">
-        <div className="row between"><b>Charges réglées ce mois</b><span className="muted small">{b.faites}/{b.nb}</span></div>
-        <Progress value={b.nb ? b.faites / b.nb : 0} />
-        <p className="muted small">{money(b.montantFait)} réglés</p>
-      </section>
-      {b.aRenseigner.length > 0 && <div className="alert warn">Montant à renseigner : {b.aRenseigner.map((r) => r.data.nom).join(', ')}. Touchez le nom du revenu pour l'indiquer ; il sera alors compté dans le total.</div>}
+      <div className="kpis">
+        <div className="kpi"><small>Déjà dépensé sur les charges</small><b>{money(b.depense)}</b><span className="trend">avec justificatifs</span></div>
+        <div className="kpi"><small>Reste à garder pour les charges</small><b className="pos">{money(b.aMettre)}</b><span className="trend">{b.nb - b.faites} charge{b.nb - b.faites > 1 ? 's' : ''} en cours</span></div>
+      </div>
+      <button className="btn primary full" onClick={() => setDep({})}><Plus size={18} /> Ajouter une dépense</button>
+      {b.aRenseigner.length > 0 && <div className="alert warn">Montant à renseigner : {b.aRenseigner.map((r) => r.data.nom).join(', ')}. Touchez « Reçu ce mois » pour l'indiquer.</div>}
       {rs.length === 0 && <Empty icon={<Wallet size={34} />} title="Aucun revenu" text="Ajoutez votre revenu et ses charges." />}
-      {rs.map((r) => <RevenuCard key={r.id} r={r} mk={mk} onEdit={(c) => setEdit({ r, c })} />)}
+      {rs.map((r) => <RevenuCard key={r.id} r={r} mk={mk} onEdit={(c) => setEdit({ r, c })} onDetail={(c) => setDetail({ r, c })} onDep={(c) => setDep({ r: r.id, c: c?.id })} />)}
       <button className="btn ghost full" onClick={() => setNewRev(true)}><Plus size={17} /> Ajouter un revenu</button>
       {edit && <ChargeSheet r={edit.r} c={edit.c} onClose={() => setEdit(null)} />}
       {newRev && <RevenuSheet onClose={() => setNewRev(false)} />}
+      {dep && <DepenseSheet mk={mk} preset={dep} onClose={() => setDep(null)} />}
+      {detail && <ChargeDetail mk={mk} r={detail.r} c={detail.c} onClose={() => setDetail(null)} onEdit={() => { setEdit(detail); setDetail(null); }} onDep={() => { setDep({ r: detail.r.id, c: detail.c.id }); setDetail(null); }} />}
     </>
   );
 }
 
-function RevenuCard({ r, mk, onEdit }) {
+function RevenuCard({ r, mk, onEdit, onDetail, onDep }) {
   const s = useStore();
   const [editRev, setEditRev] = useState(false);
+  const [recuOpen, setRecuOpen] = useState(false);
   const d = r.data;
   const faits = (d.faits || {})[mk] || {};
   const charges = d.charges || [];
   const tot = charges.reduce((x, c) => x + num(c.montant), 0);
-  const reste = num(d.montant) - tot;
+  const recu = recuMois(r, mk);
+  const reste = recu - tot;
   const toggle = (id) => {
     const f = { ...(d.faits || {}) };
     const m = { ...(f[mk] || {}) };
@@ -138,28 +157,142 @@ function RevenuCard({ r, mk, onEdit }) {
     <section className="card">
       <button className="card-h" style={{ width: '100%', textAlign: 'left' }} onClick={() => setEditRev(true)}>
         <div className="grow"><small className="muted">{d.titulaire === 'monsieur' ? 'Monsieur' : 'Moi'}</small><b className="wrap" style={{ display: 'block' }}>{d.nom}</b></div>
-        <div className="right"><b>{num(d.montant) ? money(d.montant) : <span className="neg">À renseigner</span>}</b><Pencil size={14} className="muted" /></div>
+        <Pencil size={14} className="muted" />
+      </button>
+      <button className="recu-line" onClick={() => setRecuOpen(true)}>
+        <span>Reçu en {monthLabel(mk).split(' ')[0]}</span>
+        <b>{recu ? money(recu) : <span className="neg">À renseigner</span>}</b>
+        <small>{(d.recus || {})[mk] !== undefined ? 'montant réel' : `prévu ${money(d.montant)} · toucher pour corriger`}</small>
       </button>
       <div className="list" style={{ margin: '0 -14px' }}>
-        {charges.map((c) => (
-          <div className="task" key={c.id}>
-            <button className={`check ${faits[c.id] ? 'on' : ''}`} onClick={() => toggle(c.id)} aria-label={faits[c.id] ? 'Décocher' : 'Cocher'}>{faits[c.id] && <Check size={16} strokeWidth={3} />}</button>
-            <button className="grow item-main" style={{ textAlign: 'left' }} onClick={() => onEdit(c)}>
-              <b className={faits[c.id] ? 'done-t' : ''}>{c.nom}</b>
-              <small>{faits[c.id] ? `Fait le ${dateFr(faits[c.id])}` : 'À faire ce mois'}</small>
-            </button>
-            <b className={faits[c.id] ? 'muted' : ''}>{money(c.montant)}</b>
-          </div>
-        ))}
+        {charges.map((c) => {
+          const dep = chargeDepense(s, mk, r.id, c.id);
+          const rest = num(c.montant) - dep;
+          return (
+            <div className="task" key={c.id}>
+              <button className={`check ${faits[c.id] ? 'on' : ''}`} onClick={() => toggle(c.id)} aria-label={faits[c.id] ? 'Décocher' : 'Cocher'}>{faits[c.id] && <Check size={16} strokeWidth={3} />}</button>
+              <button className="grow item-main" style={{ textAlign: 'left' }} onClick={() => onDetail(c)}>
+                <b className={faits[c.id] ? 'done-t' : ''}>{c.nom}</b>
+                <small>{faits[c.id] ? `Réglé le ${dateFr(faits[c.id])}` : dep ? <>Dépensé {money(dep)} · <span className={rest < 0 ? 'neg' : 'pos'}>{rest < 0 ? `dépassé de ${money(-rest)}` : `reste ${money(rest)}`}</span></> : 'Rien dépensé pour l’instant'}</small>
+                {!faits[c.id] && dep > 0 && <span className="mini-bar"><i style={{ width: `${Math.min(100, (dep / Math.max(1, num(c.montant))) * 100)}%`, background: rest < 0 ? '#DC2626' : 'var(--violet)' }} /></span>}
+              </button>
+              <b className={faits[c.id] ? 'muted' : ''}>{money(c.montant)}</b>
+            </div>
+          );
+        })}
       </div>
-      <button className="btn soft sm" onClick={() => onEdit(null)}><Plus size={15} /> Ajouter une charge</button>
+      <div className="row gap">
+        <button className="btn soft sm grow" onClick={() => onDep(null)}><Plus size={15} /> Dépense</button>
+        <button className="btn ghost sm grow" onClick={() => onEdit(null)}><Plus size={15} /> Charge</button>
+      </div>
       <div className="totals">
+        <div className="kv"><span>Entrée du mois</span><b>{money(recu)}</b></div>
         <div className="kv"><span>Total des charges</span><b>{money(tot)}</b></div>
         <div className="kv big"><span>Reste</span><b className={reste < 0 ? 'neg' : 'pos'}>{reste >= 0 ? '+' : ''}{money(reste)}</b></div>
       </div>
       {reste < 0 && <div className="alert danger">Ce revenu est dans le rouge de {money(-reste)}.</div>}
       {editRev && <RevenuSheet rec={r} onClose={() => setEditRev(false)} />}
+      {recuOpen && <RecuSheet r={r} mk={mk} onClose={() => setRecuOpen(false)} />}
     </section>
+  );
+}
+
+function RecuSheet({ r, mk, onClose }) {
+  const s = useStore();
+  const [v, setV] = useState(recuMois(r, mk));
+  return (
+    <Sheet title={`Reçu en ${monthLabel(mk)}`} onClose={onClose}
+      footer={<button className="btn primary full" onClick={() => { s.save('revenu_fixe', { ...r.data, recus: { ...(r.data.recus || {}), [mk]: num(v) } }, { id: r.id }); onClose(); }}>Enregistrer</button>}>
+      <p className="muted small">{r.data.nom} · montant prévu {money(r.data.montant)}. Indiquez ce qui est réellement arrivé ce mois (frais de banque, retenues…).</p>
+      <Field label="Montant reçu"><MoneyInput value={v} onChange={setV} autoFocus /></Field>
+    </Sheet>
+  );
+}
+
+// Justificatif obligatoire : une photo (reçu, capture) ou une explication écrite
+function JustifFields({ d, up }) {
+  return (
+    <>
+      <Field label="Justificatif (obligatoire)" help="Sans justificatif, la dépense ne peut pas être validée.">
+        <textarea rows={2} value={d.justif || ''} onChange={(e) => up('justif', e.target.value)} placeholder="Ex. Vidange chez Total Oloumi, facture n° 254" />
+      </Field>
+      <PhotoInput value={d.photo} pending={d._photo_pending} onChange={(x) => {
+        if (x.pending) up('_photo_pending', x.pending);
+        if (x.remove) { up('_photo_pending', undefined); up('photo', undefined); }
+      }} />
+    </>
+  );
+}
+const hasJustif = (d) => (d.justif || '').trim().length >= 3 || d.photo || d._photo_pending;
+
+function DepenseSheet({ mk, preset, rec, onClose }) {
+  const s = useStore();
+  const toast = useToast();
+  const rs = revenusFixes(s);
+  const [d, setD] = useState(() => rec ? { ...rec.data } : { mois: mk, date: mk === monthKey(today()) ? today() : `${mk}-15`, revenu: preset?.r || rs[0]?.id || '', charge: preset?.c || '', montant: '', motif: '', justif: '' });
+  const [del, setDel] = useState(false);
+  const up = (k, v) => setD((x) => ({ ...x, [k]: v }));
+  const r = rs.find((x) => x.id === d.revenu);
+  const c = (r?.data.charges || []).find((x) => x.id === d.charge);
+  const dejà = r && c ? chargeDepense(s, d.mois, r.id, c.id) - (rec ? num(rec.data.montant) : 0) : 0;
+  const reste = c ? num(c.montant) - dejà - num(d.montant) : 0;
+  const ok = d.revenu && d.charge && num(d.montant) > 0 && d.motif.trim() && hasJustif(d);
+  const save = () => {
+    if (!ok) return toast(!hasJustif(d) ? 'Ajoutez un justificatif : sans justificatif, pas de validation' : 'Complétez la dépense', 'err');
+    s.save('depense_charge', { ...d, montant: num(d.montant), mois: (d.date || '').slice(0, 7) || mk }, { id: rec?.id, shared: rec ? undefined : true });
+    toast('Dépense enregistrée ✓');
+    onClose();
+  };
+  return (
+    <Sheet title={rec ? 'Modifier la dépense' : 'Nouvelle dépense'} onClose={onClose}
+      footer={<div className="row gap">{rec && <button className="btn ghost danger-t" onClick={() => setDel(true)}><Trash2 size={18} /></button>}<button className="btn primary grow" disabled={!ok} onClick={save}>Valider la dépense</button></div>}>
+      <Field label="Sur quel salaire ?">
+        <div className="chips">{rs.map((x) => <button type="button" key={x.id} className={`chip ${d.revenu === x.id ? 'on' : ''}`} onClick={() => setD({ ...d, revenu: x.id, charge: '' })}>{x.data.titulaire === 'monsieur' ? 'Monsieur' : 'Moi'} · {x.data.nom.replace(/^Revenu /, '').slice(0, 18)}</button>)}</div>
+      </Field>
+      {r && (
+        <Field label="Quelle charge ?">
+          <div className="chips">{(r.data.charges || []).map((x) => <button type="button" key={x.id} className={`chip ${d.charge === x.id ? 'on' : ''}`} onClick={() => up('charge', x.id)}>{x.nom}</button>)}</div>
+        </Field>
+      )}
+      <div className="row gap">
+        <Field label="Montant"><MoneyInput value={d.montant} onChange={(v) => up('montant', v)} /></Field>
+        <Field label="Date"><input type="date" value={d.date} onChange={(e) => up('date', e.target.value)} /></Field>
+      </div>
+      <Field label="Pour quoi ?"><input value={d.motif} onChange={(e) => up('motif', e.target.value)} placeholder="Ex. Carburant, vidange, pièces…" /></Field>
+      <JustifFields d={d} up={up} />
+      {c && <div className={`alert ${reste < 0 ? 'danger' : 'info'}`}>Budget {c.nom} : {money(c.montant)} · déjà dépensé {money(dejà)} · après cette dépense il reste <b>{money(reste)}</b> à garder pour {c.nom}.</div>}
+      {del && <Confirm text="Supprimer cette dépense ?" onNo={() => setDel(false)} onYes={() => { s.remove(rec.id); onClose(); }} />}
+    </Sheet>
+  );
+}
+
+function ChargeDetail({ mk, r, c, onClose, onEdit, onDep }) {
+  const s = useStore();
+  const [edit, setEdit] = useState(null);
+  const list = depensesCharges(s, mk).filter((d) => d.data.revenu === r.id && d.data.charge === c.id).sort((a, b) => (b.data.date || '').localeCompare(a.data.date || ''));
+  const dep = list.reduce((x, d) => x + num(d.data.montant), 0);
+  const reste = num(c.montant) - dep;
+  return (
+    <Sheet title={c.nom} onClose={onClose}
+      footer={<div className="row gap"><button className="btn ghost grow" onClick={onEdit}><Pencil size={16} /> Modifier la charge</button><button className="btn primary grow" onClick={onDep}><Plus size={16} /> Dépense</button></div>}>
+      <div className="totals">
+        <div className="kv"><span>Budget du mois</span><b>{money(c.montant)}</b></div>
+        <div className="kv"><span>Déjà dépensé</span><b>{money(dep)}</b></div>
+        <div className="kv big"><span>{reste < 0 ? 'Dépassement' : 'Reste à garder'}</span><b className={reste < 0 ? 'neg' : 'pos'}>{money(Math.abs(reste))}</b></div>
+      </div>
+      <p className="muted small">{r.data.nom} · {monthLabel(mk)}</p>
+      {list.length === 0 ? <p className="muted">Aucune dépense ce mois pour {c.nom}.</p> : (
+        <div className="card list">
+          {list.map((x) => (
+            <button className="item" key={x.id} onClick={() => setEdit(x)}>
+              <div className="grow item-main"><b>{x.data.motif}</b><small>{dateFr(x.data.date)} · {x.data.photo || x.data._photo_pending ? '📎 ' : ''}{x.data.justif || 'justificatif en photo'}{x.data._by && s.profiles[x.data._by] ? ` · ${s.profiles[x.data._by].display_name}` : ''}</small></div>
+              <b className="neg">- {money(x.data.montant)}</b>
+            </button>
+          ))}
+        </div>
+      )}
+      {edit && <DepenseSheet mk={mk} rec={edit} onClose={() => setEdit(null)} />}
+    </Sheet>
   );
 }
 
@@ -580,6 +713,10 @@ export function enveloppesFoyer(s) {
   const detail = {};
   EP_PARTS.forEach((p) => { tot[p.k] = num(depart[p.k]); detail[p.k] = { depart: num(depart[p.k]), salaires: 0, loyer: 0 }; });
   Object.values(d.mois || {}).forEach((x) => EP_PARTS.forEach((p) => { if (x[p.k]?.fait) { tot[p.k] += num(x[p.k].montant); detail[p.k].salaires += num(x[p.k].montant); } }));
+  for (const x of s.list('imprevu')) {
+    const k = x.data.env || 'divers';
+    if (tot[k] !== undefined) { tot[k] -= num(x.data.montant); detail[k].sorties = (detail[k].sorties || 0) + num(x.data.montant); }
+  }
   for (const l of s.list('loyer_mois')) for (const ln of l.data.lignes || []) {
     if (ln.fait && ln.env && tot[ln.env] !== undefined) { tot[ln.env] += num(ln.montant); detail[ln.env].loyer += num(ln.montant); }
   }
@@ -641,7 +778,7 @@ function EpargneFoyer({ mk, isOrly }) {
         {EP_PARTS.map((p) => (
           <div className="caisse" key={p.k} style={{ '--c': p.color }}>
             <small>Enveloppe {p.label}</small><b>{money(cumul[p.k])}</b>
-            <small>{[env.detail[p.k].depart && `départ ${money(env.detail[p.k].depart)}`, env.detail[p.k].salaires && `salaires ${money(env.detail[p.k].salaires)}`, env.detail[p.k].loyer && `loyer ${money(env.detail[p.k].loyer)}`].filter(Boolean).join(' · ') || 'vide pour l’instant'}</small>
+            <small>{[env.detail[p.k].depart && `départ ${money(env.detail[p.k].depart)}`, env.detail[p.k].salaires && `salaires ${money(env.detail[p.k].salaires)}`, env.detail[p.k].loyer && `loyer ${money(env.detail[p.k].loyer)}`, env.detail[p.k].sorties && `sorties -${money(env.detail[p.k].sorties)}`].filter(Boolean).join(' · ') || 'vide pour l’instant'}</small>
           </div>
         ))}
         {om !== null && <div className="caisse" style={{ '--c': '#D3145A' }}><small>Épargne OrlyMarket</small><b>{money(om)}</b></div>}
@@ -668,6 +805,71 @@ function FixSheet({ fixes, depart, base, onClose, onSave }) {
       {EP_PARTS.map((k) => (
         <Field key={k.k} label={k.label}><MoneyInput value={dep[k.k]} onChange={(v) => setDep({ ...dep, [k.k]: v })} /></Field>
       ))}
+    </Sheet>
+  );
+}
+
+// =====================================================================
+// 6. Imprévus du mois : pris dans les enveloppes (Imprévus, Loisirs…)
+// =====================================================================
+const IMP_ENVS = [['divers', 'Imprévus'], ['loisirs', 'Loisirs'], ['epargne', 'Épargne'], ['construction', 'Construction']];
+function Imprevus({ mk }) {
+  const s = useStore();
+  const [form, setForm] = useState(null);
+  const env = enveloppesFoyer(s);
+  const list = imprevusMois(s, mk).sort((a, b) => (b.data.date || '').localeCompare(a.data.date || ''));
+  const tot = list.reduce((x, d) => x + num(d.data.montant), 0);
+  return (
+    <>
+      <section className="hero small">
+        <p>Enveloppe Imprévus · disponible</p>
+        <h2>{money(env.tot.divers)}</h2>
+        <small>Imprévus de {monthLabel(mk).split(' ')[0]} : {money(tot)} · Loisirs disponibles : {money(env.tot.loisirs)}</small>
+      </section>
+      {env.tot.divers < 0 && <div className="alert danger">L'enveloppe Imprévus est vide : il manque {money(-env.tot.divers)}.</div>}
+      <button className="btn primary full" onClick={() => setForm({})}><Plus size={18} /> Ajouter un imprévu</button>
+      {list.length === 0 ? <Empty title="Aucun imprévu ce mois" text="Notez ici les dépenses imprévues : elles sont retirées de l'enveloppe Imprévus (ou Loisirs…)." /> : (
+        <div className="card list">
+          {list.map((x) => (
+            <button className="item" key={x.id} onClick={() => setForm(x)}>
+              <div className="grow item-main"><b>{x.data.motif}</b><small>{dateFr(x.data.date)} · {IMP_ENVS.find((e) => e[0] === x.data.env)?.[1] || 'Imprévus'} · {x.data.photo || x.data._photo_pending ? '📎 ' : ''}{x.data.justif || ''}{x.data._by && s.profiles[x.data._by] ? ` · ${s.profiles[x.data._by].display_name}` : ''}</small></div>
+              <b className="neg">- {money(x.data.montant)}</b>
+            </button>
+          ))}
+        </div>
+      )}
+      {form && <ImprevuSheet mk={mk} rec={form.id ? form : null} onClose={() => setForm(null)} />}
+    </>
+  );
+}
+
+function ImprevuSheet({ mk, rec, onClose }) {
+  const s = useStore();
+  const toast = useToast();
+  const [d, setD] = useState(() => rec ? { ...rec.data } : { date: mk === monthKey(today()) ? today() : `${mk}-15`, env: 'divers', montant: '', motif: '', justif: '' });
+  const [del, setDel] = useState(false);
+  const up = (k, v) => setD((x) => ({ ...x, [k]: v }));
+  const env = enveloppesFoyer(s);
+  const dispo = num(env.tot[d.env]) + (rec && rec.data.env === d.env ? num(rec.data.montant) : 0);
+  const ok = num(d.montant) > 0 && d.motif.trim() && hasJustif(d);
+  const save = () => {
+    if (!ok) return toast(!hasJustif(d) ? 'Ajoutez un justificatif : sans justificatif, pas de validation' : 'Complétez l’imprévu', 'err');
+    s.save('imprevu', { ...d, montant: num(d.montant), mois: (d.date || '').slice(0, 7) || mk }, { id: rec?.id, shared: rec ? undefined : true });
+    toast('Imprévu enregistré ✓');
+    onClose();
+  };
+  return (
+    <Sheet title={rec ? "Modifier l'imprévu" : 'Nouvel imprévu'} onClose={onClose}
+      footer={<div className="row gap">{rec && <button className="btn ghost danger-t" onClick={() => setDel(true)}><Trash2 size={18} /></button>}<button className="btn primary grow" disabled={!ok} onClick={save}>Valider l'imprévu</button></div>}>
+      <Field label="Pris dans l'enveloppe"><div className="chips">{IMP_ENVS.map(([k, l]) => <button type="button" key={k} className={`chip ${d.env === k ? 'on' : ''}`} onClick={() => up('env', k)}>{l}</button>)}</div></Field>
+      <div className="row gap">
+        <Field label="Montant"><MoneyInput value={d.montant} onChange={(v) => up('montant', v)} /></Field>
+        <Field label="Date"><input type="date" value={d.date} onChange={(e) => up('date', e.target.value)} /></Field>
+      </div>
+      <Field label="Quel imprévu ?"><input value={d.motif} onChange={(e) => up('motif', e.target.value)} placeholder="Ex. Médicaments, réparation, cotisation…" /></Field>
+      <JustifFields d={d} up={up} />
+      <div className={`alert ${dispo - num(d.montant) < 0 ? 'danger' : 'info'}`}>Dans l'enveloppe : {money(dispo)} · après cet imprévu : <b>{money(dispo - num(d.montant))}</b></div>
+      {del && <Confirm text="Supprimer cet imprévu ?" onNo={() => setDel(false)} onYes={() => { s.remove(rec.id); onClose(); }} />}
     </Sheet>
   );
 }

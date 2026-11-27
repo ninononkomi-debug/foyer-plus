@@ -5,7 +5,7 @@ export const isNative = Capacitor.isNativePlatform();
 
 const DEFAULT_PREFS = {
   pinHash: null, pinSalt: null, bio: false, lockDelay: 60, theme: 'light', failed: 0,
-  notif: { taches: true, daily: true, budget: true, loyers: true, dettes: true, abonnements: true, tontine: true },
+  notif: { taches: true, daily: false, budget: true, loyers: true, dettes: true, abonnements: true, tontine: true },
   reminderHour: 20, reminderMinute: 0,
   omRepartition: { epargne: 30, reinvest: 40, perso: 20, tontine: 10 },
 };

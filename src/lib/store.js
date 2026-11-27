@@ -98,6 +98,7 @@ class Store {
     const household_id = opts.shared === undefined
       ? (existing ? existing.household_id : null)
       : (opts.shared ? this.householdId : null);
+    data = { ...data, _by: this.user.id };
     const rec = existing
       ? { ...existing, data: { ...data }, household_id, updated_at: now }
       : { id: opts.id || newId(), owner_id: this.user.id, household_id, module, data: { ...data }, deleted: false, created_at: now, updated_at: now };
@@ -111,7 +112,7 @@ class Store {
   remove(id) {
     const r = this.records.get(id);
     if (!r) return;
-    const rec = { ...r, deleted: true, updated_at: new Date().toISOString() };
+    const rec = { ...r, data: { ...r.data, _by: this.user.id }, deleted: true, updated_at: new Date().toISOString() };
     this.records.set(id, rec);
     if (!LOCAL_MODE) this.outbox.set(id, rec);
     this.persist();
@@ -174,12 +175,16 @@ class Store {
       if (this.householdId && this.householdId !== hadHousehold) this.lastPull = EPOCH; // nouveau foyer : tout recharger
       // 3. Réception des nouveautés
       const since = new Date(new Date(this.lastPull).getTime() - 3000).toISOString();
+      const firstPull = this.lastPull === EPOCH;
+      const fromPartner = [];
       let from = 0;
       for (;;) {
         const { data, error } = await supabase.from('records').select('*')
           .gt('server_updated_at', since).order('server_updated_at').range(from, from + 999);
         if (error) throw error;
         for (const r of data) {
+          const before = this.records.get(r.id);
+          if (!firstPull && r.household_id && r.data?._by && r.data._by !== this.user.id && (!before || before.updated_at !== r.updated_at)) fromPartner.push({ rec: r, before });
           if (!this.outbox.has(r.id)) this.records.set(r.id, r);
           if (r.server_updated_at > this.lastPull) this.lastPull = r.server_updated_at;
         }
@@ -191,6 +196,7 @@ class Store {
       for (const [id, r] of this.records) if (r.household_id && !myHh.has(r.household_id) && r.owner_id !== this.user.id) this.records.delete(id);
       this.syncError = null;
       this.lastSyncAt = new Date();
+      if (fromPartner.length && this.onPartnerChange) { try { this.onPartnerChange(fromPartner); } catch (e) { /* */ } }
       this.persist();
       this.seedIfNeeded();
     } catch (e) {

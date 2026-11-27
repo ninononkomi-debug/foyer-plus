@@ -1,9 +1,10 @@
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { isNative, getPrefs } from './security.js';
-import { budgetStatus, detteReste, loyerMois, loyerEcheance, locataireActifMois } from './compute.js';
+import { detteReste } from './compute.js';
 import { money, monthKey, today, addDays, addMonths, num } from './format.js';
 import { tasksOn, isDone, aboEcheance } from './agenda.js';
 import { checkUpdate } from './update.js';
+import { budgetMois } from '../screens/FoyerV2.jsx';
 
 let channelDone = false;
 let timer = null;
@@ -53,7 +54,8 @@ async function doRefresh(store) {
   }
   const prefs = getPrefs(store.user.id);
   const pending = await LocalNotifications.getPending();
-  if (pending.notifications.length) await LocalNotifications.cancel({ notifications: pending.notifications.map((n) => ({ id: n.id })) });
+  const toCancel = pending.notifications.filter((n) => n.id < 5000);
+  if (toCancel.length) await LocalNotifications.cancel({ notifications: toCancel.map((n) => ({ id: n.id })) });
 
   const now = new Date();
   const t = today();
@@ -81,19 +83,40 @@ async function doRefresh(store) {
     }
   }
 
-  if (prefs.notif.daily) {
-    list.push({ id: 1, title: 'Orly 📝', body: "Avez-vous noté vos dépenses d'aujourd'hui ?", schedule: { on: { hour: prefs.reminderHour, minute: prefs.reminderMinute }, allowWhileIdle: true }, channelId: 'foyer', smallIcon: 'ic_stat_foyer', iconColor: '#D3145A' });
+  // Fin de mois (plus de rappel chaque jour) : dernier jour à 18 h, puis alerte le 5 si le mois n'est pas bouclé
+  {
+    const mk = monthKey(t);
+    const next = addMonths(mk, 1);
+    const [y, m] = mk.split('-').map(Number);
+    const last = `${mk}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+    const b = budgetMois(store, mk);
+    const nom = new Date(y, m - 1, 1).toLocaleDateString('fr-FR', { month: 'long' });
+    if (b.nb && b.faites < b.nb) {
+      add(`Fin ${nom} 📝`, `Pensez à saisir les dépenses et à cocher les charges de ${nom} (${b.nb - b.faites} restante${b.nb - b.faites > 1 ? 's' : ''}).`, at(last, 18));
+      add(`Nous sommes le 5 ⚠️`, `${b.nb - b.faites} charge${b.nb - b.faites > 1 ? 's' : ''} de ${nom} pas encore réglée${b.nb - b.faites > 1 ? 's' : ''} ou non saisie${b.nb - b.faites > 1 ? 's' : ''}. Mettez le Foyer à jour.`, at(`${next}-05`, 9));
+    }
+    // le mois précédent, s'il n'est toujours pas bouclé et qu'on est avant le 5
+    const prev = addMonths(mk, -1);
+    const bp = budgetMois(store, prev);
+    if (bp.nb && bp.faites < bp.nb) {
+      const [py, pm] = prev.split('-').map(Number);
+      const pnom = new Date(py, pm - 1, 1).toLocaleDateString('fr-FR', { month: 'long' });
+      add(`Nous sommes le 5 ⚠️`, `${bp.nb - bp.faites} charge${bp.nb - bp.faites > 1 ? 's' : ''} de ${pnom} pas encore réglée${bp.nb - bp.faites > 1 ? 's' : ''} ou non saisie${bp.nb - bp.faites > 1 ? 's' : ''}. Mettez le Foyer à jour.`, at(`${mk}-05`, 9));
+    }
   }
 
+  // Loyer : la locataire paie à la fin du mois, dernier délai le 10 du mois suivant
   if (prefs.notif.loyers) {
-    for (const mk of [monthKey(t), addMonths(monthKey(t), 1)]) {
-      for (const l of store.list('locataire')) {
-        if (!locataireActifMois(l, mk)) continue;
-        const s = loyerMois(store, l, mk);
-        if (s.reste <= 0) continue;
-        const ech = loyerEcheance(l, mk);
-        add('Loyer attendu 🔑', `${l.data.nom} : ${money(s.reste)} à encaisser aujourd'hui`, at(ech));
-        add('Loyer en retard ⚠️', `${l.data.nom} n'a pas encore payé ${money(s.reste)}`, at(addDays(ech, 3)));
+    const cfg = store.list('loyer_cfg')[0];
+    if (cfg) {
+      for (const mk of [addMonths(monthKey(t), -1), monthKey(t)]) {
+        const l = store.list('loyer_mois').find((x) => x.data.mois === mk);
+        if (l?.data.verse) continue;
+        const [y, m] = mk.split('-').map(Number);
+        const nom = new Date(y, m - 1, 1).toLocaleDateString('fr-FR', { month: 'long' });
+        const nx = addMonths(mk, 1);
+        add('Loyer attendu 🔑', `Loyer de ${nom} (${money(cfg.data.montant)}) : délai jusqu'au 10. Pensez à le noter dès qu'il est versé.`, at(`${nx}-05`, 9));
+        add('Loyer en retard ⚠️', `${cfg.data.locataire} n'a pas encore versé le loyer de ${nom} (${money(cfg.data.montant)}). Dernier délai aujourd'hui.`, at(`${nx}-10`, 9));
       }
     }
   }
@@ -124,16 +147,6 @@ async function doRefresh(store) {
       if (tn.data.mon_tour && !tn.data.recu) add('Votre tour de tontine 🎉', `${tn.data.nom} : vous recevez ${money(tn.data.a_recevoir)}`, at(tn.data.mon_tour));
     }
   }
-  if (prefs.notif.budget) {
-    const mk = monthKey(t);
-    for (const b of budgetStatus(store, mk)) {
-      if (b.pct <= 1) continue;
-      const k = onceKey(`budget:${mk}:${b.rec.id}`);
-      if (localStorage.getItem(k)) continue;
-      localStorage.setItem(k, '1');
-      list.push({ id: id++, title: 'Budget dépassé 🎯', body: `${b.categorie} : ${money(b.depense)} dépensés pour un budget de ${money(b.montant)}`, schedule: { at: new Date(Date.now() + 3000), allowWhileIdle: true }, channelId: 'foyer', smallIcon: 'ic_stat_foyer', iconColor: '#D3145A' });
-    }
-  }
   // Nouvelle version disponible : une seule notification par version
   try {
     const v = await checkUpdate();
@@ -146,3 +159,34 @@ async function doRefresh(store) {
   if (list.length) await LocalNotifications.schedule({ notifications: list.slice(0, 200) });
 }
 export { num };
+
+// Le conjoint a ajouté ou modifié quelque chose : notification immédiate
+const LIB = {
+  depense_charge: (d) => `une dépense de ${money(d.montant)}${d.motif ? ` (${d.motif})` : ''}`,
+  imprevu: (d) => `un imprévu de ${money(d.montant)}${d.motif ? ` (${d.motif})` : ''}`,
+  revenu_fixe: () => 'les revenus et charges du foyer',
+  loyer_mois: () => 'le loyer',
+  besoin: (d) => `un besoin : ${d.libelle || ''}`,
+  epargne_foyer: () => "l'épargne du foyer",
+  dette: (d) => `la dette « ${d.personne || ''} »`,
+  tontine: (d) => `la tontine « ${d.nom || ''} »`,
+  abonnement: (d) => `l'abonnement « ${d.nom || ''} »`,
+  tache: (d) => `la tâche « ${d.titre || ''} »`,
+};
+let partnerId = 5000;
+export async function notifyPartnerChanges(store, changes) {
+  if (!isNative) return;
+  try {
+    const perm = await LocalNotifications.checkPermissions();
+    if (perm.display !== 'granted') return;
+    const notifs = changes.slice(-5).map(({ rec, before }) => {
+      const qui = store.profiles[rec.data._by]?.display_name || 'Votre conjoint';
+      const quoi = (LIB[rec.module] || (() => 'une information'))(rec.data);
+      const verbe = rec.deleted ? 'a supprimé' : before ? 'a modifié' : 'a ajouté';
+      partnerId = partnerId >= 5900 ? 5000 : partnerId + 1;
+      return { id: partnerId, title: 'Foyer : nouveauté 🏠', body: `${qui} ${verbe} ${quoi}.`, schedule: { at: new Date(Date.now() + 1500), allowWhileIdle: true }, channelId: 'foyer', smallIcon: 'ic_stat_foyer', iconColor: '#7B2FBE' };
+    });
+    if (notifs.length > 1) notifs.splice(0, notifs.length, { ...notifs[notifs.length - 1], title: `${changes.length} nouveautés dans le foyer`, body: notifs.map((n) => n.body).join(' ') });
+    await LocalNotifications.schedule({ notifications: notifs });
+  } catch (e) { /* */ }
+}
