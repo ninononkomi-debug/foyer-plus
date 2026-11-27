@@ -19,7 +19,7 @@ import { Journal, Rapports, Notifs, Taches } from './screens/Extras.jsx';
 import { alertes } from './lib/overview.js';
 import Market from './screens/Market.jsx';
 import Agenda from './screens/Agenda.jsx';
-import FoyerV2 from './screens/FoyerV2.jsx';
+import FoyerV2, { normaliserFoyer } from './screens/FoyerV2.jsx';
 import Besoins from './screens/Besoins.jsx';
 import Settings, { usePrefs } from './screens/Settings.jsx';
 import { AuthScreen, NewPasswordScreen } from './screens/Auth.jsx';
@@ -153,6 +153,7 @@ function Main({ onLogout }) {
   };
   window.__appBack = () => { if (page !== 'home') { setPage('home'); return true; } return false; };
   useEffect(() => { scrollRef.current?.scrollTo(0, 0); }, [page, arg]);
+  useEffect(() => { try { if (s.ready) normaliserFoyer(s); } catch (e) { console.warn('normaliser', e); } }, [s.ready, s.lastSyncAt]);
   useEffect(() => {
     if (!isNative || localStorage.getItem('orly:notifAsked')) return;
     localStorage.setItem('orly:notifAsked', '1');

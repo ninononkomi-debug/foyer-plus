@@ -69,8 +69,76 @@ export function cibleEpargne(s) {
   return Object.values(f).reduce((x, v) => x + num(v), 0);
 }
 
+// Remise en ordre des données du foyer (après chaque synchro, sur chaque téléphone) :
+// 1. ce qui appartient au foyer mais a été enregistré « privé » (avant d'avoir rejoint le foyer) y est replacé ;
+// 2. les revenus en double (même titulaire) sont fusionnés dans le plus ancien ;
+// 3. un salaire noté « reçu en novembre » avant le changement de période compte pour décembre.
+const FOYER_MODULES = ['revenu_fixe', 'loyer_cfg', 'loyer_mois', 'epargne_foyer', 'depense_charge', 'imprevu', 'besoin'];
+const older = (a, b) => (a.created_at || '').localeCompare(b.created_at || '') || a.id.localeCompare(b.id);
+export function normaliserFoyer(s) {
+  if (!s.user || !s.lastSyncAt) return;
+  const hh = s.householdId;
+  let changed = false;
+  if (hh) {
+    for (const m of FOYER_MODULES) {
+      for (const r of s.list(m)) if (!r.household_id && r.owner_id === s.user.id) { s.save(m, r.data, { id: r.id, householdId: hh }); changed = true; }
+    }
+    // revenus en double
+    const revs = s.list('revenu_fixe').filter((r) => r.household_id === hh).sort(older);
+    const byT = {};
+    for (const r of revs) (byT[r.data.titulaire || r.data.nom] ||= []).push(r);
+    for (const group of Object.values(byT)) {
+      if (group.length < 2) continue;
+      const keep = group[0];
+      let data = { ...keep.data, recus: { ...(keep.data.recus || {}) }, faits: { ...(keep.data.faits || {}) } };
+      for (const dup of group.slice(1)) {
+        for (const [k, v] of Object.entries(dup.data.recus || {})) if (data.recus[k] === undefined) data.recus[k] = v;
+        const cmap = {};
+        for (const c of dup.data.charges || []) {
+          const t = (data.charges || []).find((y) => (y.nom || '').toLowerCase() === (c.nom || '').toLowerCase());
+          if (t) cmap[c.id] = t.id;
+        }
+        for (const [mk, f] of Object.entries(dup.data.faits || {})) {
+          const cur = { ...(data.faits[mk] || {}) };
+          for (const [cid, v] of Object.entries(f)) if (cmap[cid] && !cur[cmap[cid]]) cur[cmap[cid]] = v;
+          data.faits[mk] = cur;
+        }
+        for (const d of s.list('depense_charge')) if (d.data.revenu === dup.id) s.save('depense_charge', { ...d.data, revenu: keep.id, charge: cmap[d.data.charge] || d.data.charge }, { id: d.id });
+        s.remove(dup.id);
+      }
+      s.save('revenu_fixe', data, { id: keep.id });
+      changed = true;
+    }
+    // un seul réglage de loyer et une seule épargne du foyer
+    for (const m of ['loyer_cfg', 'epargne_foyer']) {
+      const list = s.list(m).filter((r) => r.household_id === hh).sort(older);
+      if (list.length < 2) continue;
+      const keep = list[0];
+      const data = { ...keep.data };
+      if (m === 'epargne_foyer') {
+        data.mois = { ...(keep.data.mois || {}) };
+        for (const dup of list.slice(1)) for (const [k, v] of Object.entries(dup.data.mois || {})) if (!data.mois[k]) data.mois[k] = v;
+      }
+      for (const dup of list.slice(1)) s.remove(dup.id);
+      s.save(m, data, { id: keep.id });
+      changed = true;
+    }
+  }
+  // salaire noté « reçu en novembre » avant le changement de période → période de décembre
+  for (const r of s.list('revenu_fixe')) {
+    const rc = r.data.recus || {};
+    if (!r.data.shift1226 && rc['2026-11'] !== undefined && rc['2026-12'] === undefined) {
+      s.save('revenu_fixe', { ...r.data, recus: { ...rc, '2026-12': rc['2026-11'] }, shift1226: true }, { id: r.id });
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 // Premier lancement : les revenus et charges donnés par Orly
 export function seedFoyer(s) {
+  // jamais avant la première synchro : sinon on crée des copies au lieu d'utiliser celles du foyer
+  if (!s.user?.local && (!s.lastSyncAt || s.syncError)) return false;
   if (s.list('revenu_fixe').length) return false;
   const L = (nom, montant) => ({ id: uid(), nom, montant });
   s.save('revenu_fixe', {
