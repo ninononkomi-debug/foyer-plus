@@ -13,8 +13,21 @@ export const TITULAIRES = [['moi', 'Moi'], ['monsieur', 'Monsieur']];
 export function revenusFixes(s) {
   return s.list('revenu_fixe').sort((a, b) => (a.data.ordre || 0) - (b.data.ordre || 0));
 }
-// Montant réellement reçu ce mois (le salaire bouge un peu chaque mois)
-export const recuMois = (r, mk) => num(((r.data.recus || {})[mk]) ?? r.data.montant);
+// ---------------------------------------------------------------------
+// Périodes : les salaires reçus fin novembre servent aux charges de décembre.
+// On repart de zéro à partir de la période « décembre 2026 ».
+// ---------------------------------------------------------------------
+export const FOYER_START = '2026-12';
+export function periodeActuelle() {
+  const t = today();
+  const mk = Number(t.slice(8)) >= 25 ? addMonths(monthKey(t), 1) : monthKey(t);
+  return mk < FOYER_START ? FOYER_START : mk;
+}
+export const moisSalaire = (mk) => new Date(`${addMonths(mk, -1)}-15T12:00:00`).toLocaleDateString('fr-FR', { month: 'long' });
+
+// Montant réellement reçu (seulement s'il a été noté : sinon « en attente »)
+export const estRecu = (r, mk) => (r.data.recus || {})[mk] !== undefined;
+export const recuMois = (r, mk) => (estRecu(r, mk) ? num(r.data.recus[mk]) : 0);
 export const depensesCharges = (s, mk) => s.list('depense_charge').filter((d) => d.data.mois === mk);
 export const imprevusMois = (s, mk) => s.list('imprevu').filter((d) => d.data.mois === mk);
 export function chargeDepense(s, mk, rid, cid) {
@@ -22,13 +35,13 @@ export function chargeDepense(s, mk, rid, cid) {
 }
 export function budgetMois(s, mk) {
   const rs = revenusFixes(s);
-  let revenus = 0, charges = 0, faites = 0, nb = 0, montantFait = 0, depense = 0, aMettre = 0;
-  const aRenseigner = [];
+  let revenus = 0, charges = 0, faites = 0, nb = 0, montantFait = 0, depense = 0, aMettre = 0, prevus = 0;
+  const attente = [];
   const deps = depensesCharges(s, mk);
   for (const r of rs) {
-    const recu = recuMois(r, mk);
-    const ok = recu > 0;
-    if (ok) revenus += recu; else aRenseigner.push(r);
+    const ok = estRecu(r, mk);
+    prevus += num(r.data.montant);
+    if (ok) revenus += recuMois(r, mk); else attente.push(r);
     const f = (r.data.faits || {})[mk] || {};
     for (const c of r.data.charges || []) {
       if (ok) charges += num(c.montant);
@@ -39,8 +52,21 @@ export function budgetMois(s, mk) {
     }
   }
   const imprevus = imprevusMois(s, mk).reduce((x, d) => x + num(d.data.montant), 0);
-  // un revenu sans montant n'entre pas dans le calcul (sinon le foyer paraît « dans le rouge » à tort)
-  return { revenus, charges, reste: revenus - charges, faites, nb, montantFait, aRenseigner, depense, aMettre, imprevus };
+  // seuls les salaires réellement reçus comptent : pas d'argent « imaginaire »
+  return { revenus, charges, reste: revenus - charges, faites, nb, montantFait, aRenseigner: [], attente, depense, aMettre, imprevus, prevus, recuAuMoinsUn: rs.some((r) => estRecu(r, mk)) };
+}
+
+// Feu tricolore : vert = on couvre les charges ET l'épargne prévue ; orange = charges couvertes
+// mais pas tout l'objectif d'épargne ; rouge = les charges dépassent l'argent reçu.
+export function feu(reste, cible) {
+  if (reste < 0) return { lvl: 'red', label: 'AU ROUGE', ico: '⛔' };
+  if (reste < cible) return { lvl: 'orange', label: 'À SURVEILLER', ico: '⚠️' };
+  return { lvl: 'green', label: 'AU VERT', ico: '✅' };
+}
+export function cibleEpargne(s) {
+  const d = s.list('epargne_foyer')[0]?.data || {};
+  const f = { epargne: 20000, loisirs: 10000, divers: 15000, construction: 10000, ...(d.fixes || {}) };
+  return Object.values(f).reduce((x, v) => x + num(v), 0);
 }
 
 // Premier lancement : les revenus et charges donnés par Orly
@@ -76,7 +102,9 @@ const SECTIONS = [['budget', 'Revenus & charges'], ['imprevus', 'Imprévus'], ['
 export default function FoyerV2({ initial, isOrly }) {
   const s = useStore();
   const [sec, setSec] = useState(initial || 'budget');
-  const [month, setMonth] = useState(monthKey(today()));
+  const [month, setMonthRaw] = useState(periodeActuelle());
+  const setMonth = (m) => setMonthRaw(m < FOYER_START ? FOYER_START : m);
+  const [loyerMonth, setLoyerMonth] = useState(monthKey(today()));
   useEffect(() => {
     if (!isOrly || !s.ready) return;
     seedFoyer(s);
@@ -90,10 +118,12 @@ export default function FoyerV2({ initial, isOrly }) {
       <div className="section-chips">
         {SECTIONS.map(([k, l]) => <button key={k} className={`chip ${sec === k ? 'on' : ''}`} onClick={() => setSec(k)}>{l}</button>)}
       </div>
-      {['budget', 'loyer', 'epargne', 'imprevus'].includes(sec) && <MonthNav value={month} onChange={setMonth} />}
+      {['budget', 'epargne', 'imprevus'].includes(sec) && <MonthNav value={month} onChange={setMonth} />}
+      {['budget', 'epargne', 'imprevus'].includes(sec) && <p className="periode">Charges de <b>{monthLabel(month)}</b> · payées avec les salaires de fin {moisSalaire(month)}</p>}
+      {sec === 'loyer' && <MonthNav value={loyerMonth} onChange={setLoyerMonth} />}
       {sec === 'budget' && <Budget mk={month} />}
       {sec === 'imprevus' && <Imprevus mk={month} />}
-      {sec === 'loyer' && <Loyer mk={month} />}
+      {sec === 'loyer' && <Loyer mk={loyerMonth} />}
       {sec === 'dettes' && <Dettes />}
       {sec === 'tontines' && <Tontines />}
       {sec === 'epargne' && <EpargneFoyer mk={month} isOrly={isOrly} />}
@@ -114,17 +144,13 @@ function Budget({ mk }) {
   const b = budgetMois(s, mk);
   return (
     <>
-      <section className={`hero small ${b.reste < 0 ? 'danger' : ''}`} style={b.reste < 0 ? { background: 'linear-gradient(135deg,#9F1239,#E11D48)' } : undefined}>
-        <p>{monthLabel(mk)} · entrées − charges</p>
-        <h2>{b.reste >= 0 ? '+' : ''}{money(b.reste)}</h2>
-        <small>{b.reste < 0 ? '⚠️ Vous êtes dans le rouge' : 'Vous êtes dans le vert'} · entrées {money(b.revenus)} · charges {money(b.charges)}</small>
-      </section>
+      <FeuHero s={s} b={b} />
       <div className="kpis">
         <div className="kpi"><small>Déjà dépensé sur les charges</small><b>{money(b.depense)}</b><span className="trend">avec justificatifs</span></div>
-        <div className="kpi"><small>Reste à garder pour les charges</small><b className="pos">{money(b.aMettre)}</b><span className="trend">{b.nb - b.faites} charge{b.nb - b.faites > 1 ? 's' : ''} en cours</span></div>
+        <div className="kpi"><small>Encore à payer sur les charges</small><b>{money(b.aMettre)}</b><span className="trend">{b.nb - b.faites} charge{b.nb - b.faites > 1 ? 's' : ''} en cours</span></div>
       </div>
       <button className="btn primary full" onClick={() => setDep({})}><Plus size={18} /> Ajouter une dépense</button>
-      {b.aRenseigner.length > 0 && <div className="alert warn">Montant à renseigner : {b.aRenseigner.map((r) => r.data.nom).join(', ')}. Touchez « Reçu ce mois » pour l'indiquer.</div>}
+
       {rs.length === 0 && <Empty icon={<Wallet size={34} />} title="Aucun revenu" text="Ajoutez votre revenu et ses charges." />}
       {rs.map((r) => <RevenuCard key={r.id} r={r} mk={mk} onEdit={(c) => setEdit({ r, c })} onDetail={(c) => setDetail({ r, c })} onDep={(c) => setDep({ r: r.id, c: c?.id })} />)}
       <button className="btn ghost full" onClick={() => setNewRev(true)}><Plus size={17} /> Ajouter un revenu</button>
@@ -133,6 +159,28 @@ function Budget({ mk }) {
       {dep && <DepenseSheet mk={mk} preset={dep} onClose={() => setDep(null)} />}
       {detail && <ChargeDetail mk={mk} r={detail.r} c={detail.c} onClose={() => setDetail(null)} onEdit={() => { setEdit(detail); setDetail(null); }} onDep={() => { setDep({ r: detail.r.id, c: detail.c.id }); setDetail(null); }} />}
     </>
+  );
+}
+
+function FeuHero({ s, b }) {
+  if (!b.recuAuMoinsUn) {
+    return (
+      <section className="feu wait">
+        <span className="feu-pill">⏳ EN ATTENTE DES SALAIRES</span>
+        <h2>0 F reçu</h2>
+        <small>Rien n'est compté tant qu'un salaire n'est pas noté « reçu ». Prévu : {money(b.prevus)}.</small>
+      </section>
+    );
+  }
+  const cible = cibleEpargne(s);
+  const f = feu(b.reste, cible);
+  return (
+    <section className={`feu ${f.lvl}`}>
+      <span className="feu-pill">{f.ico} {f.label}</span>
+      <h2>{b.reste >= 0 ? '+' : ''}{money(b.reste)}</h2>
+      <small>Reste après les charges · reçu {money(b.revenus)} − charges {money(b.charges)}</small>
+      <small className="feu-why">{f.lvl === 'red' ? `Les charges dépassent l'argent reçu de ${money(-b.reste)}.` : f.lvl === 'orange' ? `Les charges sont couvertes, mais il manque ${money(cible - b.reste)} pour l'épargne prévue (${money(cible)}).` : `Charges couvertes et épargne prévue (${money(cible)}) possible.`}{b.attente.length ? ` En attente : ${b.attente.map((r) => (r.data.titulaire === 'monsieur' ? 'salaire de Monsieur' : 'votre salaire')).join(', ')}.` : ''}</small>
+    </section>
   );
 }
 
@@ -146,6 +194,7 @@ function RevenuCard({ r, mk, onEdit, onDetail, onDep }) {
   const tot = charges.reduce((x, c) => x + num(c.montant), 0);
   const recu = recuMois(r, mk);
   const reste = recu - tot;
+  const recuOk = estRecu(r, mk);
   const toggle = (id) => {
     const f = { ...(d.faits || {}) };
     const m = { ...(f[mk] || {}) };
@@ -159,11 +208,19 @@ function RevenuCard({ r, mk, onEdit, onDetail, onDep }) {
         <div className="grow"><small className="muted">{d.titulaire === 'monsieur' ? 'Monsieur' : 'Moi'}</small><b className="wrap" style={{ display: 'block' }}>{d.nom}</b></div>
         <Pencil size={14} className="muted" />
       </button>
-      <button className="recu-line" onClick={() => setRecuOpen(true)}>
-        <span>Reçu en {monthLabel(mk).split(' ')[0]}</span>
-        <b>{recu ? money(recu) : <span className="neg">À renseigner</span>}</b>
-        <small>{(d.recus || {})[mk] !== undefined ? 'montant réel' : `prévu ${money(d.montant)} · toucher pour corriger`}</small>
-      </button>
+      {estRecu(r, mk) ? (
+        <button className="recu-line ok" onClick={() => setRecuOpen(true)}>
+          <span>✅ Salaire reçu (fin {moisSalaire(mk)})</span>
+          <b>{money(recu)}</b>
+          <small>toucher pour corriger le montant</small>
+        </button>
+      ) : (
+        <button className="recu-line wait" onClick={() => setRecuOpen(true)}>
+          <span>⏳ Salaire en attente (fin {moisSalaire(mk)})</span>
+          <b>Prévu {money(d.montant)}</b>
+          <small>Touchez ici quand le salaire est arrivé</small>
+        </button>
+      )}
       <div className="list" style={{ margin: '0 -14px' }}>
         {charges.map((c) => {
           const dep = chargeDepense(s, mk, r.id, c.id);
@@ -173,8 +230,8 @@ function RevenuCard({ r, mk, onEdit, onDetail, onDep }) {
               <button className={`check ${faits[c.id] ? 'on' : ''}`} onClick={() => toggle(c.id)} aria-label={faits[c.id] ? 'Décocher' : 'Cocher'}>{faits[c.id] && <Check size={16} strokeWidth={3} />}</button>
               <button className="grow item-main" style={{ textAlign: 'left' }} onClick={() => onDetail(c)}>
                 <b className={faits[c.id] ? 'done-t' : ''}>{c.nom}</b>
-                <small>{faits[c.id] ? `Réglé le ${dateFr(faits[c.id])}` : dep ? <>Dépensé {money(dep)} · <span className={rest < 0 ? 'neg' : 'pos'}>{rest < 0 ? `dépassé de ${money(-rest)}` : `reste ${money(rest)}`}</span></> : 'Rien dépensé pour l’instant'}</small>
-                {!faits[c.id] && dep > 0 && <span className="mini-bar"><i style={{ width: `${Math.min(100, (dep / Math.max(1, num(c.montant))) * 100)}%`, background: rest < 0 ? '#DC2626' : 'var(--violet)' }} /></span>}
+                <small>{faits[c.id] ? `Réglé le ${dateFr(faits[c.id])}` : dep ? <>Dépensé {money(dep)} · <span style={{ color: rest < 0 ? '#DC2626' : dep / Math.max(1, num(c.montant)) >= 0.75 ? '#D97706' : '#16A34A', fontWeight: 700 }}>{rest < 0 ? `dépassé de ${money(-rest)}` : `reste ${money(rest)}`}</span></> : 'Rien dépensé pour l’instant'}</small>
+                {!faits[c.id] && dep > 0 && <span className="mini-bar"><i style={{ width: `${Math.min(100, (dep / Math.max(1, num(c.montant))) * 100)}%`, background: rest < 0 ? '#DC2626' : dep / Math.max(1, num(c.montant)) >= 0.75 ? '#F59E0B' : '#16A34A' }} /></span>}
               </button>
               <b className={faits[c.id] ? 'muted' : ''}>{money(c.montant)}</b>
             </div>
@@ -185,12 +242,13 @@ function RevenuCard({ r, mk, onEdit, onDetail, onDep }) {
         <button className="btn soft sm grow" onClick={() => onDep(null)}><Plus size={15} /> Dépense</button>
         <button className="btn ghost sm grow" onClick={() => onEdit(null)}><Plus size={15} /> Charge</button>
       </div>
-      <div className="totals">
-        <div className="kv"><span>Entrée du mois</span><b>{money(recu)}</b></div>
-        <div className="kv"><span>Total des charges</span><b>{money(tot)}</b></div>
-        <div className="kv big"><span>Reste</span><b className={reste < 0 ? 'neg' : 'pos'}>{reste >= 0 ? '+' : ''}{money(reste)}</b></div>
-      </div>
-      {reste < 0 && <div className="alert danger">Ce revenu est dans le rouge de {money(-reste)}.</div>}
+      {recuOk ? (
+        <div className={`totals feu-tot ${reste < 0 ? 'red' : reste === 0 ? 'orange' : 'green'}`}>
+          <div className="kv"><span>Reçu</span><b>{money(recu)}</b></div>
+          <div className="kv"><span>Total des charges</span><b>{money(tot)}</b></div>
+          <div className="kv big"><span>{reste < 0 ? '⛔ Manque' : '✅ Reste'}</span><b>{reste >= 0 ? '+' : ''}{money(reste)}</b></div>
+        </div>
+      ) : <p className="muted small">Total des charges : {money(tot)} · le reste sera calculé quand le salaire sera reçu.</p>}
       {editRev && <RevenuSheet rec={r} onClose={() => setEditRev(false)} />}
       {recuOpen && <RecuSheet r={r} mk={mk} onClose={() => setRecuOpen(false)} />}
     </section>
@@ -199,12 +257,13 @@ function RevenuCard({ r, mk, onEdit, onDetail, onDep }) {
 
 function RecuSheet({ r, mk, onClose }) {
   const s = useStore();
-  const [v, setV] = useState(recuMois(r, mk));
+  const [v, setV] = useState(estRecu(r, mk) ? recuMois(r, mk) : num(r.data.montant));
   return (
-    <Sheet title={`Reçu en ${monthLabel(mk)}`} onClose={onClose}
+    <Sheet title={`Salaire reçu fin ${moisSalaire(mk)}`} onClose={onClose}
       footer={<button className="btn primary full" onClick={() => { s.save('revenu_fixe', { ...r.data, recus: { ...(r.data.recus || {}), [mk]: num(v) } }, { id: r.id }); onClose(); }}>Enregistrer</button>}>
-      <p className="muted small">{r.data.nom} · montant prévu {money(r.data.montant)}. Indiquez ce qui est réellement arrivé ce mois (frais de banque, retenues…).</p>
+      <p className="muted small">{r.data.nom} · salaire de fin {moisSalaire(mk)}, pour les charges de {monthLabel(mk)}. Montant prévu {money(r.data.montant)} : indiquez ce qui est vraiment arrivé (frais de banque, retenues…).</p>
       <Field label="Montant reçu"><MoneyInput value={v} onChange={setV} autoFocus /></Field>
+      {estRecu(r, mk) && <button className="btn ghost full" onClick={() => { const x = { ...(r.data.recus || {}) }; delete x[mk]; s.save('revenu_fixe', { ...r.data, recus: x }, { id: r.id }); onClose(); }}>Pas encore reçu (remettre en attente)</button>}
     </Sheet>
   );
 }
@@ -223,7 +282,7 @@ function DepenseSheet({ mk, preset, rec, onClose }) {
   const s = useStore();
   const toast = useToast();
   const rs = revenusFixes(s);
-  const [d, setD] = useState(() => rec ? { ...rec.data } : { mois: mk, date: mk === monthKey(today()) ? today() : `${mk}-15`, revenu: preset?.r || rs[0]?.id || '', charge: preset?.c || '', montant: '', motif: '', justif: '' });
+  const [d, setD] = useState(() => rec ? { ...rec.data } : { mois: mk, date: today(), revenu: preset?.r || rs[0]?.id || '', charge: preset?.c || '', montant: '', motif: '', justif: '' });
   const [del, setDel] = useState(false);
   const up = (k, v) => setD((x) => ({ ...x, [k]: v }));
   const r = rs.find((x) => x.id === d.revenu);
@@ -233,7 +292,7 @@ function DepenseSheet({ mk, preset, rec, onClose }) {
   const ok = d.revenu && d.charge && num(d.montant) > 0 && d.motif.trim() && hasJustif(d);
   const save = () => {
     if (!ok) return toast(!hasJustif(d) ? 'Ajoutez un justificatif : sans justificatif, pas de validation' : 'Complétez la dépense', 'err');
-    s.save('depense_charge', { ...d, montant: num(d.montant), mois: (d.date || '').slice(0, 7) || mk }, { id: rec?.id, shared: rec ? undefined : true });
+    s.save('depense_charge', { ...d, montant: num(d.montant), mois: rec ? rec.data.mois : mk }, { id: rec?.id, shared: rec ? undefined : true });
     toast('Dépense enregistrée ✓');
     onClose();
   };
@@ -706,8 +765,9 @@ export function enveloppesFoyer(s) {
   const tot = {};
   const detail = {};
   EP_PARTS.forEach((p) => { tot[p.k] = num(depart[p.k]); detail[p.k] = { depart: num(depart[p.k]), salaires: 0, loyer: 0 }; });
-  Object.values(d.mois || {}).forEach((x) => EP_PARTS.forEach((p) => { if (x[p.k]?.fait) { tot[p.k] += num(x[p.k].montant); detail[p.k].salaires += num(x[p.k].montant); } }));
+  Object.entries(d.mois || {}).filter(([mk]) => mk >= FOYER_START).forEach(([, x]) => EP_PARTS.forEach((p) => { if (x[p.k]?.fait) { tot[p.k] += num(x[p.k].montant); detail[p.k].salaires += num(x[p.k].montant); } }));
   for (const x of s.list('imprevu')) {
+    if ((x.data.mois || '') < FOYER_START) continue;
     const k = x.data.env || 'divers';
     if (tot[k] !== undefined) { tot[k] -= num(x.data.montant); detail[k].sorties = (detail[k].sorties || 0) + num(x.data.montant); }
   }
@@ -743,10 +803,10 @@ function EpargneFoyer({ mk, isOrly }) {
   const rs = revenusFixes(s).filter((r) => num(r.data.montant) > 0);
   return (
     <>
-      <section className="hero small">
-        <p>Reste de nos deux salaires · {monthLabel(mk).split(' ')[0]}</p>
+      <section className={`feu ${!b.recuAuMoinsUn ? 'wait' : libre < 0 ? (base > 0 ? 'orange' : 'red') : 'green'}`}>
+        <span className="feu-pill">{!b.recuAuMoinsUn ? '⏳ EN ATTENTE DES SALAIRES' : libre < 0 ? (base > 0 ? '⚠️ ÉPARGNE INCOMPLÈTE' : '⛔ RIEN À ÉPARGNER') : '✅ ÉPARGNE POSSIBLE'}</span>
         <h2>{money(base)}</h2>
-        <small>{rs.map((r) => `${r.data.titulaire === 'monsieur' ? 'Monsieur' : 'Moi'} ${money(num(r.data.montant) - (r.data.charges || []).reduce((x, c) => x + num(c.montant), 0))}`).join(' · ')} · loyer non compté</small>
+        <small>Reste de nos salaires reçus après les charges · loyer non compté</small>
       </section>
       {b.aRenseigner.length > 0 && <div className="alert warn">Revenu à renseigner : {b.aRenseigner.map((r) => r.data.nom).join(', ')}.</div>}
       {libre < 0 && <div className="alert danger">Le reste ({money(base)}) ne couvre pas les montants prévus ({money(totalFixe)}). Il manque {money(-libre)} : baissez les montants ou revoyez les charges.</div>}
@@ -815,8 +875,9 @@ function Imprevus({ mk }) {
   const tot = list.reduce((x, d) => x + num(d.data.montant), 0);
   return (
     <>
-      <section className="hero small">
-        <p>Enveloppe Imprévus · disponible</p>
+      <section className={`feu ${env.tot.divers <= 0 ? 'red' : env.tot.divers < num((s.list('epargne_foyer')[0]?.data.fixes || {}).divers ?? 15000) ? 'orange' : 'green'}`}>
+        <span className="feu-pill">{env.tot.divers <= 0 ? '⛔ ENVELOPPE VIDE' : env.tot.divers < num((s.list('epargne_foyer')[0]?.data.fixes || {}).divers ?? 15000) ? '⚠️ ENVELOPPE BASSE' : '✅ ENVELOPPE OK'}</span>
+        <p style={{ margin: 0, opacity: .9 }}>Enveloppe Imprévus · disponible</p>
         <h2>{money(env.tot.divers)}</h2>
         <small>Imprévus de {monthLabel(mk).split(' ')[0]} : {money(tot)} · Loisirs disponibles : {money(env.tot.loisirs)}</small>
       </section>
@@ -840,7 +901,7 @@ function Imprevus({ mk }) {
 function ImprevuSheet({ mk, rec, onClose }) {
   const s = useStore();
   const toast = useToast();
-  const [d, setD] = useState(() => rec ? { ...rec.data } : { date: mk === monthKey(today()) ? today() : `${mk}-15`, env: 'divers', montant: '', motif: '', justif: '' });
+  const [d, setD] = useState(() => rec ? { ...rec.data } : { date: today(), env: 'divers', montant: '', motif: '', justif: '' });
   const [del, setDel] = useState(false);
   const up = (k, v) => setD((x) => ({ ...x, [k]: v }));
   const env = enveloppesFoyer(s);
@@ -848,7 +909,7 @@ function ImprevuSheet({ mk, rec, onClose }) {
   const ok = num(d.montant) > 0 && d.motif.trim() && hasJustif(d);
   const save = () => {
     if (!ok) return toast(!hasJustif(d) ? 'Ajoutez un justificatif : sans justificatif, pas de validation' : 'Complétez l’imprévu', 'err');
-    s.save('imprevu', { ...d, montant: num(d.montant), mois: (d.date || '').slice(0, 7) || mk }, { id: rec?.id, shared: rec ? undefined : true });
+    s.save('imprevu', { ...d, montant: num(d.montant), mois: rec ? rec.data.mois : mk }, { id: rec?.id, shared: rec ? undefined : true });
     toast('Imprévu enregistré ✓');
     onClose();
   };

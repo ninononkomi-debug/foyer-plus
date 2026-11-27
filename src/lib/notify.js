@@ -4,7 +4,7 @@ import { detteReste } from './compute.js';
 import { money, monthKey, today, addDays, addMonths, num } from './format.js';
 import { tasksOn, isDone, aboEcheance } from './agenda.js';
 import { checkUpdate } from './update.js';
-import { budgetMois } from '../screens/FoyerV2.jsx';
+import { budgetMois, FOYER_START } from '../screens/FoyerV2.jsx';
 
 let channelDone = false;
 let timer = null;
@@ -91,14 +91,14 @@ async function doRefresh(store) {
     const last = `${mk}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
     const b = budgetMois(store, mk);
     const nom = new Date(y, m - 1, 1).toLocaleDateString('fr-FR', { month: 'long' });
-    if (b.nb && b.faites < b.nb) {
+    if (mk >= FOYER_START && b.nb && b.faites < b.nb) {
       add(`Fin ${nom} 📝`, `Pensez à saisir les dépenses et à cocher les charges de ${nom} (${b.nb - b.faites} restante${b.nb - b.faites > 1 ? 's' : ''}).`, at(last, 18));
       add(`Nous sommes le 5 ⚠️`, `${b.nb - b.faites} charge${b.nb - b.faites > 1 ? 's' : ''} de ${nom} pas encore réglée${b.nb - b.faites > 1 ? 's' : ''} ou non saisie${b.nb - b.faites > 1 ? 's' : ''}. Mettez le Foyer à jour.`, at(`${next}-05`, 9));
     }
     // le mois précédent, s'il n'est toujours pas bouclé et qu'on est avant le 5
     const prev = addMonths(mk, -1);
     const bp = budgetMois(store, prev);
-    if (bp.nb && bp.faites < bp.nb) {
+    if (prev >= FOYER_START && bp.nb && bp.faites < bp.nb) {
       const [py, pm] = prev.split('-').map(Number);
       const pnom = new Date(py, pm - 1, 1).toLocaleDateString('fr-FR', { month: 'long' });
       add(`Nous sommes le 5 ⚠️`, `${bp.nb - bp.faites} charge${bp.nb - bp.faites > 1 ? 's' : ''} de ${pnom} pas encore réglée${bp.nb - bp.faites > 1 ? 's' : ''} ou non saisie${bp.nb - bp.faites > 1 ? 's' : ''}. Mettez le Foyer à jour.`, at(`${mk}-05`, 9));

@@ -52,9 +52,9 @@ export function Donut({ items, size = 108, center }) {
   );
 }
 
-function Kpi({ I, ico, bg, title, value, sub, color, arrow, onClick }) {
+function Kpi({ I, ico, bg, title, value, sub, color, arrow, onClick, cls = '' }) {
   return (
-    <button className="mk-kpi" style={{ background: bg }} onClick={onClick}>
+    <button className={`mk-kpi ${cls}`} style={{ background: bg }} onClick={onClick}>
       <I size={26} color={ico} strokeWidth={2.2} />
       <small>{title}</small>
       <b style={color ? { color } : undefined}>{value}</b>
@@ -91,7 +91,7 @@ export default function HomeV2({ go, sections }) {
   } else {
     const c = foyerCards(s);
     cards = [
-      <Kpi key="1" I={Wallet} ico="#16A34A" bg="linear-gradient(160deg,#F0FBF2,#DDF4E3)" title="Solde disponible" value={H(c.solde.v)} color={c.solde.v < 0 ? '#DC2626' : undefined} sub={c.solde.sub} arrow={{ I: c.solde.v >= 0 ? ArrowUp : ArrowDown, color: c.solde.v >= 0 ? '#16A34A' : '#DC2626' }} onClick={() => go('foyer:budget')} />,
+      <Kpi key="1" cls={`st-${c.solde.lvl}`} I={Wallet} ico={c.solde.lvl === 'red' ? '#DC2626' : c.solde.lvl === 'orange' ? '#D97706' : c.solde.lvl === 'wait' ? '#64748B' : '#16A34A'} bg="#fff" title="Solde disponible" value={c.solde.lvl === 'wait' ? '0 F' : H(c.solde.v)} color={c.solde.lvl === 'red' ? '#B91C1C' : c.solde.lvl === 'orange' ? '#C2410C' : c.solde.lvl === 'green' ? '#15803D' : '#475569'} sub={c.solde.sub} arrow={{ I: c.solde.lvl === 'red' ? ArrowDown : ArrowUp, color: c.solde.lvl === 'red' ? '#B91C1C' : c.solde.lvl === 'orange' ? '#C2410C' : c.solde.lvl === 'wait' ? '#475569' : '#15803D' }} onClick={() => go('foyer:budget')} />,
       <Kpi key="2" I={CalendarClock} ico="#E6337A" bg="linear-gradient(160deg,#FFF1F6,#FFE0EC)" title="Charges à régler" value={c.charges.n} color="#E11D48" sub={H(c.charges.v)} arrow={{ I: ArrowRight, color: '#E11D48' }} onClick={() => go('foyer:budget')} />,
       <Kpi key="3" I={Users} ico="#7B2FBE" bg="linear-gradient(160deg,#F6F0FF,#E9DEFA)" title="Tontines en cours" value={c.tontines.n} sub={H(c.tontines.v)} arrow={{ I: ArrowRight, color: '#7B2FBE' }} onClick={() => go('foyer:tontines')} />,
       <Kpi key="4" I={PiggyBank} ico="#F28C1B" bg="linear-gradient(160deg,#FFF7EC,#FFE9CC)" title="Mon épargne" value={H(c.epargne.v)} sub={c.epargne.sub} arrow={{ I: ArrowUp, color: '#E8590C' }} onClick={() => go('foyer:epargne')} />,

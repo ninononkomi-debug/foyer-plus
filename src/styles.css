@@ -556,3 +556,26 @@ body { background: linear-gradient(180deg, #FCEFF7 0%, #F6EAFB 55%, #FBEFF6 100%
 .recu-line small { grid-column: 1 / -1; color: var(--muted); font-size: 11.5px; }
 .mini-bar { display: block; height: 4px; border-radius: 4px; background: var(--track); margin-top: 4px; overflow: hidden; }
 .mini-bar i { display: block; height: 100%; border-radius: 4px; }
+
+/* Feu tricolore : la couleur dit tout, même sans lire les chiffres */
+.periode { text-align: center; font-size: 12.5px; color: var(--muted); margin-top: -4px; }
+.feu { border-radius: 20px; padding: 16px 18px; color: #fff; display: flex; flex-direction: column; gap: 4px; box-shadow: 0 10px 24px rgba(0,0,0,.12); }
+.feu h2 { font-size: 34px; font-weight: 800; letter-spacing: -.02em; }
+.feu small { opacity: .95; font-size: 12.5px; }
+.feu .feu-why { font-weight: 600; }
+.feu-pill { align-self: flex-start; background: rgba(255,255,255,.25); border: 1px solid rgba(255,255,255,.5); padding: 5px 12px; border-radius: 99px; font-weight: 800; font-size: 14px; letter-spacing: .03em; }
+.feu.green { background: linear-gradient(135deg, #15803D, #22C55E); }
+.feu.orange { background: linear-gradient(135deg, #C2410C, #F59E0B); }
+.feu.red { background: linear-gradient(135deg, #991B1B, #EF4444); }
+.feu.wait { background: linear-gradient(135deg, #475569, #94A3B8); }
+.recu-line.ok { background: #E8F7EE; }
+.recu-line.ok b { color: #15803D; }
+.recu-line.wait { background: #F1F5F9; border: 1px dashed #94A3B8; }
+.recu-line.wait b { color: #64748B; }
+.feu-tot.green { background: #E8F7EE; } .feu-tot.green .big b { color: #15803D; }
+.feu-tot.orange { background: #FFF4E0; } .feu-tot.orange .big b { color: #C2410C; }
+.feu-tot.red { background: #FDECEC; } .feu-tot.red .big b { color: #B91C1C; }
+.mk-kpi.st-green { background: linear-gradient(160deg,#E6F8EC,#C9EFD6) !important; }
+.mk-kpi.st-orange { background: linear-gradient(160deg,#FFF3DF,#FFE0B0) !important; }
+.mk-kpi.st-red { background: linear-gradient(160deg,#FDE8E8,#F9C9C9) !important; }
+.mk-kpi.st-wait { background: linear-gradient(160deg,#F1F5F9,#E2E8F0) !important; }

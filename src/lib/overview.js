@@ -2,7 +2,7 @@
 import { num, today, monthKey, addMonths, addDays, daysBetween, dateFr, money } from './format.js';
 import { factTotals, caisses, marketParam, PARTS, clienteName, clienteStats, empruntsOuverts, empruntStats, marketMonth, encaissements } from './market.js';
 import { tasksOn, lateTasks, isDone, aboStatus, aboLabel } from './agenda.js';
-import { budgetMois, tontinesEnCours, enveloppesFoyer, revenusFixes } from '../screens/FoyerV2.jsx';
+import { budgetMois, tontinesEnCours, enveloppesFoyer, revenusFixes, periodeActuelle, FOYER_START, feu, cibleEpargne, moisSalaire } from '../screens/FoyerV2.jsx';
 
 const pctEvol = (a, b) => (b > 0 ? Math.round(((a - b) / b) * 100) : null);
 
@@ -31,13 +31,14 @@ export function marketCards(s) {
 }
 
 export function foyerCards(s) {
-  const mk = monthKey(today());
+  const mk = periodeActuelle();
   const b = budgetMois(s, mk);
+  const f = b.recuAuMoinsUn ? feu(b.reste, cibleEpargne(s)) : { lvl: 'wait' };
   const t = tontinesEnCours(s);
   const env = enveloppesFoyer(s);
   return {
-    solde: { v: b.reste, sub: `${b.faites}/${b.nb} charges réglées` },
-    charges: { n: b.nb - b.faites, v: b.charges - b.montantFait },
+    solde: { v: b.reste, sub: b.recuAuMoinsUn ? (f.lvl === 'green' ? 'au vert' : f.lvl === 'orange' ? 'à surveiller' : 'au rouge') : 'salaires en attente', lvl: f.lvl },
+    charges: { n: b.nb - b.faites, v: b.aMettre },
     tontines: { n: t.length, v: t.reduce((x, r) => x + num(r.data.montant ?? r.data.a_recevoir), 0) },
     epargne: { v: env.tot.epargne || 0, sub: 'enveloppe épargne' },
   };
@@ -74,15 +75,15 @@ export function alertes(s, sections) {
     const st = aboStatus(a);
     if (st.level === 'late' || st.level === 'soon') out.push({ lvl: st.level === 'late' ? 'danger' : 'warn', ico: 'abo', title: `${a.data.nom} : ${st.j < 0 ? 'échéance dépassée' : `fin ${aboLabel(st.j)}`}`, text: money(a.data.montant), go: 'agenda:abos' });
   }
-  const b = budgetMois(s, monthKey(t0));
-  if (b.reste < 0) out.push({ lvl: 'danger', ico: 'foyer', title: 'Foyer dans le rouge ce mois', text: `Il manque ${money(-b.reste)}`, go: 'foyer' });
-  if (day >= 10 && b.nb - b.faites > 0) out.push({ lvl: 'warn', ico: 'foyer', title: `${b.nb - b.faites} charge${b.nb - b.faites > 1 ? 's' : ''} pas encore réglée${b.nb - b.faites > 1 ? 's' : ''}`, text: money(b.charges - b.montantFait), go: 'foyer' });
+  const b = budgetMois(s, periodeActuelle());
+  if (b.recuAuMoinsUn && b.reste < 0) out.push({ lvl: 'danger', ico: 'foyer', title: 'Foyer dans le rouge ce mois', text: `Il manque ${money(-b.reste)}`, go: 'foyer' });
+  if (day >= 10 && b.recuAuMoinsUn && b.nb - b.faites > 0) out.push({ lvl: 'warn', ico: 'foyer', title: `${b.nb - b.faites} charge${b.nb - b.faites > 1 ? 's' : ''} pas encore réglée${b.nb - b.faites > 1 ? 's' : ''}`, text: money(b.charges - b.montantFait), go: 'foyer' });
   const prevMk = addMonths(monthKey(t0), -1);
   const nomPrev = new Date(`${prevMk}-15T12:00:00`).toLocaleDateString('fr-FR', { month: 'long' });
   const loyer = s.list('loyer_mois').find((x) => x.data.mois === prevMk);
   if (!loyer?.data.verse && s.list('loyer_cfg').length) out.push({ lvl: day > 10 ? 'danger' : 'warn', ico: 'loyer', title: day > 10 ? `Loyer de ${nomPrev} en retard` : `Loyer de ${nomPrev} attendu (délai le 10)`, text: s.list('loyer_cfg')[0].data.locataire, go: 'foyer:loyer' });
   const bp = budgetMois(s, prevMk);
-  if (bp.nb && bp.faites < bp.nb) out.push({ lvl: day > 5 ? 'danger' : 'warn', ico: 'foyer', title: `${nomPrev[0].toUpperCase()}${nomPrev.slice(1)} pas bouclé : ${bp.nb - bp.faites} charge${bp.nb - bp.faites > 1 ? 's' : ''} non réglée${bp.nb - bp.faites > 1 ? 's' : ''}`, text: day > 5 ? 'Le délai du 5 est dépassé' : 'À mettre à jour avant le 5', go: 'foyer' });
+  if (prevMk >= FOYER_START && bp.nb && bp.faites < bp.nb) out.push({ lvl: day > 5 ? 'danger' : 'warn', ico: 'foyer', title: `${nomPrev[0].toUpperCase()}${nomPrev.slice(1)} pas bouclé : ${bp.nb - bp.faites} charge${bp.nb - bp.faites > 1 ? 's' : ''} non réglée${bp.nb - bp.faites > 1 ? 's' : ''}`, text: day > 5 ? 'Le délai du 5 est dépassé' : 'À mettre à jour avant le 5', go: 'foyer' });
   for (const tn of tontinesEnCours(s)) {
     if (tn.data.date_fin && daysBetween(t0, tn.data.date_fin) <= 30 && daysBetween(t0, tn.data.date_fin) >= 0) out.push({ lvl: 'info', ico: 'tontine', title: `Tontine « ${tn.data.nom} » : fin le ${dateFr(tn.data.date_fin)}`, text: `À recevoir : ${money(tn.data.montant ?? tn.data.a_recevoir)}`, go: 'foyer:tontines' });
   }
