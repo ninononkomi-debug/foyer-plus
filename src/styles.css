@@ -584,3 +584,21 @@ body { background: linear-gradient(180deg, #FCEFF7 0%, #F6EAFB 55%, #FBEFF6 100%
 .syncline.err { color: #B91C1C; background: #FDECEC; }
 .syncline button { font-weight: 800; color: var(--violet); }
 .syncline small { flex-basis: 100%; color: #B45309; font-weight: 600; }
+
+/* Foyer simplifié : une cascade lisible */
+.cascade { border-radius: 22px; padding: 16px; color: #fff; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 10px 24px rgba(0,0,0,.12); }
+.cascade.green { background: linear-gradient(135deg, #15803D, #22C55E); }
+.cascade.orange { background: linear-gradient(135deg, #C2410C, #F59E0B); }
+.cascade.red { background: linear-gradient(135deg, #991B1B, #EF4444); }
+.cascade.wait { background: linear-gradient(135deg, #475569, #94A3B8); }
+.cas-big small { display: block; opacity: .9; font-size: 13px; }
+.cas-big b { font-size: 38px; font-weight: 800; letter-spacing: -.02em; }
+.cas-msg { font-weight: 600; font-size: 13.5px; }
+.cas-lines { background: rgba(255,255,255,.16); border-radius: 14px; padding: 6px 12px; display: flex; flex-direction: column; }
+.cas-line { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; font-size: 14px; color: #fff; text-align: left; width: 100%; border-bottom: 1px solid rgba(255,255,255,.18); }
+.cas-line:last-child { border-bottom: 0; }
+.cas-line.total { font-weight: 800; font-size: 15.5px; }
+.grp { padding-top: 6px; }
+.grp-h { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 6px 0; font-weight: 800; font-size: 15px; }
+.grp-h small { color: var(--muted); font-weight: 600; }
+.env-row .right { text-align: right; }

@@ -2,7 +2,7 @@
 import { num, today, monthKey, addMonths, addDays, daysBetween, dateFr, money } from './format.js';
 import { factTotals, caisses, marketParam, PARTS, clienteName, clienteStats, empruntsOuverts, empruntStats, marketMonth, encaissements } from './market.js';
 import { tasksOn, lateTasks, isDone, aboStatus, aboLabel } from './agenda.js';
-import { budgetMois, tontinesEnCours, enveloppesFoyer, revenusFixes, periodeActuelle, FOYER_START, feu, cibleEpargne, moisSalaire } from '../screens/FoyerV2.jsx';
+import { budgetMois, bilanMois, tontinesEnCours, enveloppesFoyer, revenusFixes, periodeActuelle, FOYER_START, feu, cibleEpargne, moisSalaire } from '../screens/FoyerV2.jsx';
 
 const pctEvol = (a, b) => (b > 0 ? Math.round(((a - b) / b) * 100) : null);
 
@@ -32,12 +32,12 @@ export function marketCards(s) {
 
 export function foyerCards(s) {
   const mk = periodeActuelle();
-  const b = budgetMois(s, mk);
-  const f = b.recuAuMoinsUn ? feu(b.reste, cibleEpargne(s)) : { lvl: 'wait' };
+  const b = bilanMois(s, mk);
   const t = tontinesEnCours(s);
   const env = enveloppesFoyer(s);
+  const sub = { wait: 'salaires en attente', red: 'au rouge', orange: 'à surveiller', green: b.libre === 0 ? 'tout est réparti' : 'reste libre' }[b.lvl];
   return {
-    solde: { v: b.reste, sub: b.recuAuMoinsUn ? (f.lvl === 'green' ? 'au vert' : f.lvl === 'orange' ? 'à surveiller' : 'au rouge') : 'salaires en attente', lvl: f.lvl },
+    solde: { v: b.libre, sub, lvl: b.lvl },
     charges: { n: b.nb - b.faites, v: b.aMettre },
     tontines: { n: t.length, v: t.reduce((x, r) => x + num(r.data.montant ?? r.data.a_recevoir), 0) },
     epargne: { v: env.tot.epargne || 0, sub: 'enveloppe épargne' },
@@ -75,8 +75,8 @@ export function alertes(s, sections) {
     const st = aboStatus(a);
     if (st.level === 'late' || st.level === 'soon') out.push({ lvl: st.level === 'late' ? 'danger' : 'warn', ico: 'abo', title: `${a.data.nom} : ${st.j < 0 ? 'échéance dépassée' : `fin ${aboLabel(st.j)}`}`, text: money(a.data.montant), go: 'agenda:abos' });
   }
-  const b = budgetMois(s, periodeActuelle());
-  if (b.recuAuMoinsUn && b.reste < 0) out.push({ lvl: 'danger', ico: 'foyer', title: 'Foyer dans le rouge ce mois', text: `Il manque ${money(-b.reste)}`, go: 'foyer' });
+  const b = bilanMois(s, periodeActuelle());
+  if (b.lvl === 'red') out.push({ lvl: 'danger', ico: 'foyer', title: 'Foyer au rouge ce mois', text: `Les charges dépassent l'argent reçu de ${money(b.charges - b.revenus)}`, go: 'foyer' });
   if (day >= 10 && b.recuAuMoinsUn && b.nb - b.faites > 0) out.push({ lvl: 'warn', ico: 'foyer', title: `${b.nb - b.faites} charge${b.nb - b.faites > 1 ? 's' : ''} pas encore réglée${b.nb - b.faites > 1 ? 's' : ''}`, text: money(b.charges - b.montantFait), go: 'foyer' });
   const prevMk = addMonths(monthKey(t0), -1);
   const nomPrev = new Date(`${prevMk}-15T12:00:00`).toLocaleDateString('fr-FR', { month: 'long' });
