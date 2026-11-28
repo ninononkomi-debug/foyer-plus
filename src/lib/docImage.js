@@ -433,6 +433,87 @@ export async function statementCanvas({ factures, cliente, boutique }) {
   });
 }
 
+// ---------------- RÉCAP MENSUEL DU FOYER ----------------
+const V = { deep: '#4C1D95', main: '#7C3AED', pink: '#DB2777', soft: '#F3EEFF', gold: '#B7791F' };
+const LVL = { green: ['#15803D', 'TOUT EST RÉPARTI'], orange: ['#C2410C', 'À SURVEILLER'], red: ['#B91C1C', 'AU ROUGE'], wait: ['#475569', 'EN ATTENTE'] };
+export async function foyerRecapCanvas(r) {
+  await fontsReady();
+  const IW = W - 2 * PAD;
+  return compose((ctx, on) => {
+    // en-tête violet
+    if (on) {
+      const g = ctx.createLinearGradient(0, 0, W, 220);
+      g.addColorStop(0, V.deep); g.addColorStop(0.6, V.main); g.addColorStop(1, V.pink);
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, 220);
+      ctx.fillStyle = '#fff'; ctx.font = F(700, 24); ctx.fillText('ORLY · FOYER', PAD, 66);
+      ctx.font = F(800, 54); ctx.fillText('Récap du mois', PAD, 134);
+      ctx.font = F(600, 26); ctx.fillText(r.titre, PAD, 180);
+      ctx.textAlign = 'right'; ctx.font = F(600, 21); ctx.fillText(`Édité le ${r.edite}`, W - PAD, 66); ctx.textAlign = 'left';
+    }
+    let y = 250;
+    // bandeau du résultat
+    const lv = r.lvl === 'green' && r.libre > 0 ? ['#15803D', 'AU VERT'] : LVL[r.lvl];
+    if (on) {
+      ctx.fillStyle = lv[0]; rr(ctx, PAD, y, IW, 130, 22); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = F(800, 24); ctx.fillText(lv[1], PAD + 30, y + 46);
+      ctx.font = F(600, 22); ctx.fillText('Reste libre du mois', PAD + 30, y + 92);
+      ctx.textAlign = 'right'; ctx.font = F(800, 56); ctx.fillText(r.lvl === 'wait' ? '—' : money(r.libre), W - PAD - 30, y + 86); ctx.textAlign = 'left';
+    }
+    y += 160;
+    y = sectionTitle(ctx, on, y, 'LE CALCUL DU MOIS');
+    const rows = [];
+    r.salaires.forEach((x) => rows.push({ cells: [`${x.recu ? '✓' : '…'} Salaire ${x.qui}`, x.recu ? `+ ${money(x.montant)}` : 'pas encore reçu'] }));
+    rows.push({ cells: ['− Charges du mois', `- ${money(r.charges)}`] });
+    rows.push({ cells: ['− Mis dans les enveloppes', `- ${money(r.E)}`] });
+    r.sorties.forEach((x) => rows.push({ cells: [`− ${x.motif}`, `- ${money(x.montant)}`] }));
+    y = table(ctx, on, y, [{ t: 'LIGNE', w: IW - 300 }, { t: 'MONTANT', w: 300, a: 'right' }], rows);
+    y = recap(ctx, on, y + 20, [{ l: '= RESTE LIBRE', v: r.lvl === 'wait' ? '—' : money(r.libre), big: true, fill: lv[0], fg: '#fff' }]);
+    y += 36;
+    // charges par personne
+    y = sectionTitle(ctx, on, y, 'LES CHARGES');
+    const ch = [];
+    r.groupes.forEach((g) => {
+      ch.push({ group: g.titre, right: `${g.faites}/${g.lignes.length} réglées · ${money(g.total)}` });
+      g.lignes.forEach((c) => ch.push({ cells: [c.nom, money(c.prevu), c.dep ? money(c.dep) : '—', c.fait ? 'Réglée ✓' : 'Non cochée'], sub: c.dep > c.prevu ? [`dépassé de ${money(c.dep - c.prevu)}`, '#B91C1C'] : null, subCol: 0 }));
+    });
+    y = table(ctx, on, y, [{ t: 'CHARGE', w: IW - 600 }, { t: 'PRÉVU', w: 200, a: 'right' }, { t: 'DÉPENSÉ', w: 190, a: 'right' }, { t: 'ÉTAT', w: 210, a: 'center' }], ch);
+    y += 36;
+    if (r.depenses.length) {
+      y = sectionTitle(ctx, on, y, 'DÉPENSES NOTÉES SUR LES CHARGES');
+      y = table(ctx, on, y, [{ t: 'DATE', w: 160 }, { t: 'CHARGE', w: 220 }, { t: 'MOTIF ET JUSTIFICATIF', w: IW - 160 - 220 - 190 }, { t: 'MONTANT', w: 190, a: 'right' }],
+        r.depenses.map((d) => ({ cells: [dateFr(d.date), d.charge, [d.motif, d.justif].filter(Boolean).join(' — '), money(d.montant)] })));
+      y += 36;
+    }
+    y = sectionTitle(ctx, on, y, 'ENVELOPPES');
+    y = table(ctx, on, y, [{ t: 'ENVELOPPE', w: IW - 640 }, { t: 'À METTRE', w: 220, a: 'right' }, { t: 'MIS ?', w: 170, a: 'center' }, { t: 'SOLDE ACTUEL', w: 250, a: 'right' }],
+      r.enveloppes.map((e) => ({ cells: [e.label, money(e.prevu), e.fait ? 'Oui ✓' : 'Non', money(e.solde)] })));
+    y += 36;
+    if (r.imprevus.length) {
+      y = sectionTitle(ctx, on, y, 'IMPRÉVUS (PRIS DANS LES ENVELOPPES)');
+      y = table(ctx, on, y, [{ t: 'DATE', w: 160 }, { t: 'ENVELOPPE', w: 210 }, { t: 'MOTIF ET JUSTIFICATIF', w: IW - 160 - 210 - 190 }, { t: 'MONTANT', w: 190, a: 'right' }],
+        r.imprevus.map((d) => ({ cells: [dateFr(d.date), d.env, [d.motif, d.justif].filter(Boolean).join(' — '), money(d.montant)] })));
+      y += 36;
+    }
+    if (r.sorties.length) {
+      y = sectionTitle(ctx, on, y, 'DÉPENSES SUR LE RESTE LIBRE');
+      y = table(ctx, on, y, [{ t: 'DATE', w: 160 }, { t: 'MOTIF ET JUSTIFICATIF', w: IW - 160 - 190 }, { t: 'MONTANT', w: 190, a: 'right' }],
+        r.sorties.map((d) => ({ cells: [dateFr(d.date), [d.motif, d.justif].filter(Boolean).join(' — '), money(d.montant)] })));
+      y += 36;
+    }
+    if (r.loyer) {
+      y = sectionTitle(ctx, on, y, `LOYER DU LOCATAIRE · ${r.loyer.verse ? `reçu ${money(r.loyer.montant)}` : 'pas encore reçu'}`);
+      if (r.loyer.lignes.length) {
+        y = table(ctx, on, y, [{ t: 'RÉPARTITION', w: IW - 400 }, { t: 'MONTANT', w: 220, a: 'right' }, { t: 'FAIT ?', w: 180, a: 'center' }],
+          r.loyer.lignes.map((l) => ({ cells: [l.libelle, money(l.montant), l.fait ? 'Oui ✓' : 'Non'] })));
+      }
+      y += 36;
+    }
+    // pied
+    if (on) { ctx.fillStyle = V.soft; ctx.fillRect(0, y, W, 110); ctx.textAlign = 'center'; ctx.font = F(700, 24); ctx.fillStyle = V.deep; ctx.fillText('Chaque franc a sa place.', W / 2, y + 50); ctx.font = F(600, 20); ctx.fillStyle = C.muted; ctx.fillText('Orly · suivi du foyer', W / 2, y + 82); ctx.textAlign = 'left'; }
+    return y + 110;
+  });
+}
+
 // ---------------- Partage ----------------
 export async function shareCanvas(canvas, filename, text) {
   const dataUrl = canvas.toDataURL('image/png');

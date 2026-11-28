@@ -603,3 +603,10 @@ body { background: linear-gradient(180deg, #FCEFF7 0%, #F6EAFB 55%, #FBEFF6 100%
 .grp-h small { color: var(--muted); font-weight: 600; }
 .env-row .right { text-align: right; }
 .cas-use { margin-top: 10px; width: 100%; padding: 11px 12px; border-radius: 12px; background: #fff; color: #1F2937; font-weight: 800; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+.act3 { padding-left: 8px; padding-right: 8px; font-size: 13.5px; gap: 4px; }
+.act-help { margin: -4px 2px 6px; font-size: 12px; }
+.hist-card { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 2px; border-left: 6px solid #94A3B8; }
+.hist-card.st-green { border-left-color: #16A34A; } .hist-card.st-orange { border-left-color: #F59E0B; } .hist-card.st-red { border-left-color: #DC2626; }
+.hist-t { font-size: 17px; text-transform: capitalize; }
+.hist-pill { font-size: 12px; font-weight: 800; padding: 4px 10px; border-radius: 999px; background: #F1F5F9; color: #475569; }
+.hist-pill.green { background: #DCFCE7; color: #15803D; } .hist-pill.orange { background: #FFEDD5; color: #C2410C; } .hist-pill.red { background: #FEE2E2; color: #B91C1C; }

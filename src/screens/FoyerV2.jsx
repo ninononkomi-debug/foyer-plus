@@ -4,6 +4,7 @@ import { useStore } from '../lib/store.js';
 import { money, num, today, dateFr, monthKey, monthLabel, uid, addMonths } from '../lib/format.js';
 import { ScreenHead, Sheet, Field, MoneyInput, Segmented, MonthNav, Empty, Confirm, useToast, Progress, Fab } from '../components/ui.jsx';
 import { caisses, empruntStats, factTotals, clienteName } from '../lib/market.js';
+import { foyerRecapCanvas, shareCanvas } from '../lib/docImage.js';
 
 // =====================================================================
 // Données et calculs
@@ -178,7 +179,7 @@ const detteReste = (d) => Math.max(0, num(d.data.montant) - (d.data.remboursemen
 // =====================================================================
 // Écran Foyer
 // =====================================================================
-const SECTIONS = [['budget', 'Ce mois'], ['enveloppes', 'Enveloppes'], ['loyer', 'Loyer'], ['dettes', 'Dettes'], ['tontines', 'Tontines']];
+const SECTIONS = [['budget', 'Ce mois'], ['enveloppes', 'Enveloppes'], ['historique', 'Historique'], ['loyer', 'Loyer'], ['dettes', 'Dettes'], ['tontines', 'Tontines']];
 
 export default function FoyerV2({ initial, isOrly }) {
   const s = useStore();
@@ -207,6 +208,7 @@ export default function FoyerV2({ initial, isOrly }) {
       {sec === 'loyer' && <Loyer mk={loyerMonth} />}
       {sec === 'dettes' && <Dettes />}
       {sec === 'tontines' && <Tontines />}
+      {sec === 'historique' && <Historique />}
       {sec === 'enveloppes' && <Enveloppes mk={month} isOrly={isOrly} />}
     </div>
   );
@@ -230,9 +232,11 @@ function Budget({ mk }) {
     <>
       <Cascade b={b} rs={rs} mk={mk} onRecu={setRecu} onLibre={setLib} />
       <div className="row gap">
-        <button className="btn primary grow" onClick={() => setDep({})}><Plus size={18} /> Dépense</button>
-        <button className="btn soft grow" onClick={() => setImp(true)}><Plus size={18} /> Imprévu</button>
+        <button className="btn primary grow act3" onClick={() => setDep({})}><Plus size={16} /> Dépense</button>
+        <button className="btn soft grow act3" onClick={() => setImp(true)}><Plus size={16} /> Imprévu</button>
+        <button className="btn soft grow act3" onClick={() => setLib({})}><Plus size={16} /> Reste libre</button>
       </div>
+      <p className="muted small act-help"><b>Dépense</b> : sur une charge · <b>Imprévu</b> : pris dans une enveloppe · <b>Reste libre</b> : avec l'argent qui restait</p>
       <h3 className="sec-t">Les charges du mois <small className="muted">· {b.faites}/{b.nb} réglées</small></h3>
       {rs.length === 0 && <Empty icon={<Wallet size={34} />} title="Aucun revenu" text="Ajoutez votre revenu et ses charges." />}
       {rs.map((r) => <ChargesGroup key={r.id} r={r} mk={mk} onEdit={(c) => setEdit({ r, c })} onDetail={(c) => setDetail({ r, c })} onRev={() => setNewRev(r)} />)}
@@ -1107,6 +1111,97 @@ function ImprevuSheet({ mk, rec, onClose }) {
       <JustifFields d={d} up={up} />
       <div className={`alert ${dispo - num(d.montant) < 0 ? 'danger' : 'info'}`}>Dans l'enveloppe : {money(dispo)} · après cet imprévu : <b>{money(dispo - num(d.montant))}</b></div>
       {del && <Confirm text="Supprimer cet imprévu ?" onNo={() => setDel(false)} onYes={() => { s.remove(rec.id); onClose(); }} />}
+    </Sheet>
+  );
+}
+
+// =====================================================================
+// Historique : un récap par mois, envoyable en image
+// =====================================================================
+export function recapMois(s, mk) {
+  const b = bilanMois(s, mk);
+  const rs = revenusFixes(s);
+  const qui = (r) => (r.data.titulaire === 'monsieur' ? 'Monsieur' : 'Moi');
+  const deps = depensesCharges(s, mk);
+  const groupes = rs.map((r) => {
+    const f = (r.data.faits || {})[mk] || {};
+    const lignes = (r.data.charges || []).map((c) => ({ nom: c.nom, prevu: num(c.montant), dep: chargeDepense(s, mk, r.id, c.id), fait: !!f[c.id] }));
+    return { titre: r.data.titulaire === 'monsieur' ? 'Charges de Monsieur' : 'Mes charges', lignes, faites: lignes.filter((l) => l.fait).length, total: lignes.reduce((x, l) => x + l.prevu, 0) };
+  });
+  const chargeNom = (d) => { const r = rs.find((x) => x.id === d.data.revenu); return (r?.data.charges || []).find((c) => c.id === d.data.charge)?.nom || '—'; };
+  const ep = s.list('epargne_foyer')[0]?.data || {};
+  const fixes = { ...FIX_DEF, ...(ep.fixes || {}) };
+  const mm = (ep.mois || {})[mk] || {};
+  const env = enveloppesFoyer(s);
+  const envL = Object.fromEntries(IMP_ENVS);
+  const lo = s.list('loyer_mois').find((x) => x.data.mois === mk);
+  const byDate = (a, c) => (a.date || '').localeCompare(c.date || '');
+  return {
+    mk, titre: `Charges de ${monthLabel(mk)} · salaires de fin ${moisSalaire(mk)}`, edite: dateFr(today()),
+    lvl: b.lvl, libre: b.libre, charges: b.charges, E: b.E, revenus: b.revenus, S: b.S,
+    salaires: rs.map((r) => ({ qui: qui(r), recu: estRecu(r, mk), montant: recuMois(r, mk) })),
+    groupes,
+    depenses: deps.map((d) => ({ ...d.data, charge: chargeNom(d) })).sort(byDate),
+    enveloppes: EP_PARTS.map((p) => ({ label: p.label, prevu: num(fixes[p.k]), fait: !!mm[p.k]?.fait, solde: env.tot[p.k] || 0 })),
+    imprevus: imprevusMois(s, mk).map((d) => ({ ...d.data, env: envL[d.data.env] || 'Imprévus' })).sort(byDate),
+    sorties: b.sorties.map((d) => d.data),
+    loyer: lo ? { verse: !!lo.data.verse, montant: num(lo.data.montant), lignes: lo.data.lignes || [] } : null,
+  };
+}
+
+function Historique() {
+  const s = useStore();
+  const [open, setOpen] = useState(null);
+  const fin = periodeActuelle();
+  const mois = [];
+  for (let m = fin; m >= FOYER_START; m = addMonths(m, -1)) mois.push(m);
+  const PILL = { green: ['✅', 'Au vert'], orange: ['⚠️', 'À surveiller'], red: ['⛔', 'Au rouge'], wait: ['⏳', 'En attente'] };
+  return (
+    <>
+      <p className="muted small">Chaque mois : ce qui est entré, les charges, les enveloppes, les imprévus et les dépenses. Touchez un mois pour voir le récap en image et l'envoyer.</p>
+      {mois.map((m) => {
+        const r = recapMois(s, m);
+        const imp = r.imprevus.reduce((x, d) => x + num(d.montant), 0);
+        const dep = r.depenses.reduce((x, d) => x + num(d.montant), 0);
+        const lv = r.lvl === 'green' && r.libre === 0 ? ['✅', 'Tout est réparti'] : PILL[r.lvl];
+        return (
+          <button key={m} className={`card hist-card st-${r.lvl}`} onClick={() => setOpen(m)}>
+            <div className="card-h"><b className="hist-t">{monthLabel(m)}</b><span className={`hist-pill ${r.lvl}`}>{lv[0]} {lv[1]}</span></div>
+            <div className="kv"><span>Salaires reçus</span><b>{money(r.revenus)}</b></div>
+            <div className="kv"><span>Charges ({r.groupes.reduce((x, g) => x + g.faites, 0)}/{r.groupes.reduce((x, g) => x + g.lignes.length, 0)} réglées)</span><b>{money(r.charges)}</b></div>
+            {dep > 0 && <div className="kv"><span>dont dépenses notées</span><b>{money(dep)}</b></div>}
+            <div className="kv"><span>Mis dans les enveloppes</span><b>{money(r.E)}</b></div>
+            {imp > 0 && <div className="kv"><span>Imprévus (pris dans les enveloppes)</span><b>{money(imp)}</b></div>}
+            {r.S > 0 && <div className="kv"><span>Dépensé sur le reste libre</span><b>{money(r.S)}</b></div>}
+            <div className="kv big"><span>Reste libre</span><b>{r.lvl === 'wait' ? '—' : money(r.libre)}</b></div>
+            <small className="link">Voir le récap en image ›</small>
+          </button>
+        );
+      })}
+      {open && <RecapSheet mk={open} onClose={() => setOpen(null)} />}
+    </>
+  );
+}
+
+function RecapSheet({ mk, onClose }) {
+  const s = useStore();
+  const toast = useToast();
+  const [cv, setCv] = useState(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    foyerRecapCanvas(recapMois(s, mk)).then((c) => { if (alive) setCv(c); }).catch((e) => toast(String(e.message || e), 'err'));
+    return () => { alive = false; };
+  }, [mk]);
+  const send = async () => {
+    setBusy(true);
+    try { await shareCanvas(cv, `Recap_foyer_${mk}.png`, `Récap du foyer · ${monthLabel(mk)}`); } catch (e) { if (!/cancel/i.test(String(e?.message))) toast("L'envoi n'a pas abouti", 'err'); } finally { setBusy(false); }
+  };
+  return (
+    <Sheet title={`Récap · ${monthLabel(mk)}`} onClose={onClose}
+      footer={<button className="btn primary full" disabled={!cv || busy} onClick={send}>{busy ? 'Ouverture…' : 'Envoyer / enregistrer l’image'}</button>}>
+      {cv ? <img className="preview-img" src={cv.toDataURL('image/png')} alt="Récap du mois" /> : <p className="muted center">Préparation de l'image…</p>}
+      <p className="muted small center">Envoyez-la sur WhatsApp (à votre époux, ou à vous-même pour la garder).</p>
     </Sheet>
   );
 }
