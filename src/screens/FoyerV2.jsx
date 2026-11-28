@@ -30,6 +30,7 @@ export const estRecu = (r, mk) => (r.data.recus || {})[mk] !== undefined;
 export const recuMois = (r, mk) => (estRecu(r, mk) ? num(r.data.recus[mk]) : 0);
 export const depensesCharges = (s, mk) => s.list('depense_charge').filter((d) => d.data.mois === mk);
 export const imprevusMois = (s, mk) => s.list('imprevu').filter((d) => d.data.mois === mk);
+export const sortiesLibres = (s, mk) => s.list('sortie_libre').filter((d) => d.data.mois === mk).sort((a, b) => (a.data.date || '').localeCompare(b.data.date || ''));
 export function chargeDepense(s, mk, rid, cid) {
   return depensesCharges(s, mk).filter((d) => d.data.revenu === rid && d.data.charge === cid).reduce((x, d) => x + num(d.data.montant), 0);
 }
@@ -67,10 +68,13 @@ export function feu(reste, cible) {
 export function bilanMois(s, mk) {
   const b = budgetMois(s, mk);
   const E = cibleEpargne(s);
-  const libre = b.revenus - b.charges - E;
+  const sorties = sortiesLibres(s, mk);
+  const S = sorties.reduce((x, d) => x + num(d.data.montant), 0);
+  const avant = b.revenus - b.charges - E; // reste libre avant les dépenses faites dessus
+  const libre = avant - S;
   let lvl = 'wait';
   if (b.recuAuMoinsUn) lvl = b.revenus < b.charges ? 'red' : libre < 0 ? 'orange' : 'green';
-  return { ...b, E, libre, lvl };
+  return { ...b, E, S, sorties, avant, libre, lvl };
 }
 export function cibleEpargne(s) {
   const d = s.list('epargne_foyer')[0]?.data || {};
@@ -82,7 +86,7 @@ export function cibleEpargne(s) {
 // 1. ce qui appartient au foyer mais a été enregistré « privé » (avant d'avoir rejoint le foyer) y est replacé ;
 // 2. les revenus en double (même titulaire) sont fusionnés dans le plus ancien ;
 // 3. un salaire noté « reçu en novembre » avant le changement de période compte pour décembre.
-const FOYER_MODULES = ['revenu_fixe', 'loyer_cfg', 'loyer_mois', 'epargne_foyer', 'depense_charge', 'imprevu', 'besoin'];
+const FOYER_MODULES = ['revenu_fixe', 'loyer_cfg', 'loyer_mois', 'epargne_foyer', 'depense_charge', 'imprevu', 'sortie_libre', 'besoin'];
 const older = (a, b) => (a.created_at || '').localeCompare(b.created_at || '') || a.id.localeCompare(b.id);
 export function normaliserFoyer(s) {
   if (!s.user || !s.lastSyncAt) return;
@@ -219,11 +223,12 @@ function Budget({ mk }) {
   const [imp, setImp] = useState(false);
   const [detail, setDetail] = useState(null);
   const [recu, setRecu] = useState(null);
+  const [lib, setLib] = useState(null);
   const rs = revenusFixes(s);
   const b = bilanMois(s, mk);
   return (
     <>
-      <Cascade b={b} rs={rs} mk={mk} onRecu={setRecu} />
+      <Cascade b={b} rs={rs} mk={mk} onRecu={setRecu} onLibre={setLib} />
       <div className="row gap">
         <button className="btn primary grow" onClick={() => setDep({})}><Plus size={18} /> Dépense</button>
         <button className="btn soft grow" onClick={() => setImp(true)}><Plus size={18} /> Imprévu</button>
@@ -237,18 +242,19 @@ function Budget({ mk }) {
       {dep && <DepenseSheet mk={mk} preset={dep} onClose={() => setDep(null)} />}
       {imp && <ImprevuSheet mk={mk} onClose={() => setImp(false)} />}
       {recu && <RecuSheet r={recu} mk={mk} onClose={() => setRecu(null)} />}
+      {lib && <LibreSheet mk={mk} rec={lib.id ? lib : null} onClose={() => setLib(null)} />}
       {detail && <ChargeDetail mk={mk} r={detail.r} c={detail.c} onClose={() => setDetail(null)} onEdit={() => { setEdit(detail); setDetail(null); }} onDep={() => { setDep({ r: detail.r.id, c: detail.c.id }); setDetail(null); }} />}
     </>
   );
 }
 
 // Le bilan, lisible d'un coup d'œil : reçu − charges − enveloppes = reste libre
-function Cascade({ b, rs, mk, onRecu }) {
+function Cascade({ b, rs, mk, onRecu, onLibre }) {
   const msg = {
     wait: ['⏳ EN ATTENTE DES SALAIRES', 'Touchez un salaire quand il est arrivé.'],
     red: ['⛔ AU ROUGE', `Les charges dépassent l'argent reçu de ${money(b.charges - b.revenus)}.`],
-    orange: ['⚠️ À SURVEILLER', `Charges couvertes, mais il manque ${money(-b.libre)} pour remplir les enveloppes.`],
-    green: [b.libre === 0 ? '✅ TOUT EST RÉPARTI' : '✅ AU VERT', b.libre === 0 ? 'Chaque franc a sa place. Il ne reste rien de libre ce mois.' : `Charges et enveloppes couvertes. Il reste ${money(b.libre)} de libre.`],
+    orange: ['⚠️ À SURVEILLER', b.avant >= 0 ? `Vous avez dépensé ${money(-b.libre)} de plus que le reste libre.` : `Charges couvertes, mais il manque ${money(-b.avant)} pour remplir les enveloppes.`],
+    green: [b.libre === 0 ? '✅ TOUT EST RÉPARTI' : '✅ AU VERT', b.libre === 0 ? 'Chaque franc a sa place. Il ne reste plus rien de libre ce mois, à part ce qui est dans les enveloppes.' : `Charges et enveloppes couvertes. Il reste ${money(b.libre)} de libre.`],
   }[b.lvl];
   return (
     <section className={`cascade ${b.lvl}`}>
@@ -264,8 +270,14 @@ function Cascade({ b, rs, mk, onRecu }) {
         ))}
         <div className="cas-line"><span>− Charges du mois</span><b>- {money(b.charges)}</b></div>
         <div className="cas-line"><span>− Mis dans les enveloppes</span><b>- {money(b.E)}</b></div>
+        {b.sorties.map((x) => (
+          <button key={x.id} className="cas-line" onClick={() => onLibre(x)}>
+            <span>− {x.data.motif}</span><b>- {money(x.data.montant)}</b>
+          </button>
+        ))}
         <div className="cas-line total"><span>= Reste libre</span><b>{b.lvl === 'wait' ? '—' : money(b.libre)}</b></div>
       </div>
+      {b.lvl !== 'wait' && b.lvl !== 'red' && <button className="cas-use" onClick={() => onLibre({})}>{b.libre > 0 ? `Utiliser le reste libre (${money(b.libre)})` : '+ Noter une dépense sur le reste libre'}</button>}
     </section>
   );
 }
@@ -1095,6 +1107,64 @@ function ImprevuSheet({ mk, rec, onClose }) {
       <JustifFields d={d} up={up} />
       <div className={`alert ${dispo - num(d.montant) < 0 ? 'danger' : 'info'}`}>Dans l'enveloppe : {money(dispo)} · après cet imprévu : <b>{money(dispo - num(d.montant))}</b></div>
       {del && <Confirm text="Supprimer cet imprévu ?" onNo={() => setDel(false)} onYes={() => { s.remove(rec.id); onClose(); }} />}
+    </Sheet>
+  );
+}
+
+// Dépense prise sur le reste libre (complément de courses, remboursement, aide…)
+function LibreSheet({ mk, rec, onClose }) {
+  const s = useStore();
+  const toast = useToast();
+  const b = bilanMois(s, mk);
+  const [d, setD] = useState(() => rec ? { ...rec.data } : { date: today(), montant: '', motif: '', justif: '', dette: '' });
+  const [del, setDel] = useState(false);
+  const up = (k, v) => setD((x) => ({ ...x, [k]: v }));
+  const dispo = b.libre + (rec ? num(rec.data.montant) : 0);
+  const dettes = s.list('dette').filter((x) => (x.data.type || 'dette') === 'dette' && (detteReste(x) > 0 || x.id === rec?.data.dette));
+  const ok = num(d.montant) > 0 && d.motif.trim() && hasJustif(d);
+  // Remboursement : ajoute (ou met à jour) le versement dans Dettes
+  const syncDette = (data, remove) => {
+    const oldId = rec?.data.dette;
+    const vid = data.remb || uid();
+    if (oldId && (remove || oldId !== data.dette)) {
+      const o = s.getRec(oldId);
+      if (o) s.save('dette', { ...o.data, remboursements: (o.data.remboursements || []).filter((v) => v.id !== rec.data.remb) }, { id: o.id });
+    }
+    if (remove || !data.dette) return { ...data, remb: undefined };
+    const x = s.getRec(data.dette);
+    if (!x) return data;
+    const autres = (x.data.remboursements || []).filter((v) => v.id !== vid);
+    s.save('dette', { ...x.data, remboursements: [...autres, { id: vid, date: data.date, montant: num(data.montant), from: 'reste_libre' }] }, { id: x.id });
+    return { ...data, remb: vid };
+  };
+  const save = () => {
+    if (!ok) return toast(!hasJustif(d) ? 'Ajoutez un justificatif : sans justificatif, pas de validation' : 'Complétez la dépense', 'err');
+    const data = syncDette({ ...d, montant: num(d.montant), mois: rec ? rec.data.mois : mk });
+    s.save('sortie_libre', data, { id: rec?.id, shared: rec ? undefined : true });
+    toast('Enregistré ✓');
+    onClose();
+  };
+  return (
+    <Sheet title={rec ? 'Modifier' : 'Dépense sur le reste libre'} onClose={onClose}
+      footer={<div className="row gap">{rec && <button className="btn ghost danger-t" onClick={() => setDel(true)}><Trash2 size={18} /></button>}<button className="btn primary grow" disabled={!ok} onClick={save}>Valider</button></div>}>
+      <p className="muted small">Pour l'argent qui restait après les charges et les enveloppes : un complément de courses, un remboursement, une aide donnée…</p>
+      <div className="row gap">
+        <Field label="Montant"><MoneyInput value={d.montant} onChange={(v) => up('montant', v)} autoFocus={!rec} /></Field>
+        <Field label="Date"><input type="date" value={d.date} onChange={(e) => up('date', e.target.value)} /></Field>
+      </div>
+      <Field label="Pour quoi ?"><input value={d.motif} onChange={(e) => up('motif', e.target.value)} placeholder="Ex. Complément courses, quittance examen…" /></Field>
+      <div className="chips">{['Complément courses', 'Remboursement', 'Donné à Monsieur', 'Donné à Madame'].map((m) => <button type="button" key={m} className={`chip ${d.motif === m ? 'on' : ''}`} onClick={() => up('motif', m)}>{m}</button>)}</div>
+      <JustifFields d={d} up={up} />
+      {dettes.length > 0 && (
+        <Field label="C'est pour rembourser une dette ? (facultatif)" help="Le versement sera aussi noté dans Dettes.">
+          <div className="chips">
+            <button type="button" className={`chip ${!d.dette ? 'on' : ''}`} onClick={() => up('dette', '')}>Non</button>
+            {dettes.map((x) => <button type="button" key={x.id} className={`chip ${d.dette === x.id ? 'on' : ''}`} onClick={() => setD((y) => ({ ...y, dette: x.id, motif: y.motif || `Remboursement ${x.data.personne}` }))}>{x.data.personne} · reste {money(detteReste(x))}</button>)}
+          </div>
+        </Field>
+      )}
+      <div className={`alert ${dispo - num(d.montant) < 0 ? 'danger' : 'info'}`}>Reste libre : {money(dispo)} · après : <b>{money(dispo - num(d.montant))}</b>{dispo - num(d.montant) === 0 ? ' · tout est réparti ✓' : ''}</div>
+      {del && <Confirm text="Supprimer cette dépense ?" onNo={() => setDel(false)} onYes={() => { if (rec.data.dette) syncDette(rec.data, true); s.remove(rec.id); onClose(); }} />}
     </Sheet>
   );
 }

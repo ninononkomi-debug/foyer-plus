@@ -163,6 +163,7 @@ export { num };
 // Le conjoint a ajouté ou modifié quelque chose : notification immédiate
 const LIB = {
   depense_charge: (d) => `une dépense de ${money(d.montant)}${d.motif ? ` (${d.motif})` : ''}`,
+  sortie_libre: (d) => `une dépense sur le reste libre de ${money(d.montant)}${d.motif ? ` (${d.motif})` : ''}`,
   imprevu: (d) => `un imprévu de ${money(d.montant)}${d.motif ? ` (${d.motif})` : ''}`,
   revenu_fixe: () => 'les revenus et charges du foyer',
   loyer_mois: () => 'le loyer',

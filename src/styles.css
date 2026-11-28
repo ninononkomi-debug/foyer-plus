@@ -602,3 +602,4 @@ body { background: linear-gradient(180deg, #FCEFF7 0%, #F6EAFB 55%, #FBEFF6 100%
 .grp-h { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 6px 0; font-weight: 800; font-size: 15px; }
 .grp-h small { color: var(--muted); font-weight: 600; }
 .env-row .right { text-align: right; }
+.cas-use { margin-top: 10px; width: 100%; padding: 11px 12px; border-radius: 12px; background: #fff; color: #1F2937; font-weight: 800; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,.12); }

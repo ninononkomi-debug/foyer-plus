@@ -124,6 +124,7 @@ export function journal(s, sections) {
     out.push({ date: x.data.date, lib: x.data.motif, sub: `Dépense ${c ? `· ${c.nom}` : ''}`, v: -num(x.data.montant), src: 'foyer' });
   }
   for (const x of s.list('imprevu')) out.push({ date: x.data.date, lib: x.data.motif, sub: 'Imprévu', v: -num(x.data.montant), src: 'foyer' });
+  for (const x of s.list('sortie_libre')) out.push({ date: x.data.date, lib: x.data.motif, sub: 'Sur le reste libre', v: -num(x.data.montant), src: 'foyer' });
   for (const x of s.list('depense')) out.push({ date: x.data.date, lib: x.data.description || x.data.categorie || 'Dépense', sub: x.data.categorie || 'Saisie', v: -num(x.data.montant), src: 'saisie', id: x.id });
   for (const x of s.list('revenu')) out.push({ date: x.data.date, lib: x.data.description || x.data.categorie || 'Entrée', sub: x.data.categorie || 'Saisie', v: num(x.data.montant), src: 'saisie', id: x.id });
   return out.filter((x) => x.date).sort((a, b) => b.date.localeCompare(a.date));
